@@ -120,22 +120,26 @@ impl AccumulatedToolCall {
 /// Validate and heal message history before sending to Anthropic API.
 ///
 /// Anthropic requires that every `tool_use` block in an assistant message
-/// has a corresponding `tool_result` block in the immediately following user
-/// message. If a tool call is cancelled or the process crashes mid-execution,
-/// orphaned `tool_use` blocks will cause a 400 error.
+/// has exactly ONE corresponding `tool_result` block in the immediately
+/// following user message. This function fixes two failure modes:
 ///
-/// This function:
-/// 1. Scans for assistant messages containing `tool_use` blocks
-/// 2. Checks the next message for matching `tool_result` blocks
-/// 3. Injects error `tool_result` blocks for any orphans
-/// 4. Returns the healed message list
+/// 1. **Missing tool_result** — tool call cancelled/crashed mid-execution.
+///    Fix: inject error tool_result block.
+/// 2. **Duplicate tool_result** — same tool_use_id appears multiple times.
+///    Fix: keep only the first tool_result for each id, drop duplicates.
 pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
     let mut healed: Vec<LlmMessage> = Vec::with_capacity(messages.len());
 
     let mut i = 0;
     while i < messages.len() {
         let msg = &messages[i];
-        healed.push(msg.clone());
+        // Deduplicate tool_result blocks in user messages
+        let cleaned = if msg.role == "user" {
+            dedup_tool_results(msg)
+        } else {
+            msg.clone()
+        };
+        healed.push(cleaned);
 
         // If this is an assistant message, collect tool_use ids
         if msg.role == "assistant" {
@@ -207,6 +211,25 @@ fn extract_tool_use_ids(content: &LlmContent) -> Vec<String> {
             if let ContentBlock::ToolUse { id, .. } = b { Some(id.clone()) } else { None }
         }).collect(),
         _ => vec![],
+    }
+}
+
+/// Deduplicate tool_result blocks in a user message.
+/// Keeps only the first tool_result for each tool_use_id.
+fn dedup_tool_results(msg: &LlmMessage) -> LlmMessage {
+    match &msg.content {
+        LlmContent::Blocks(blocks) => {
+            let mut seen_ids = std::collections::HashSet::new();
+            let deduped: Vec<ContentBlock> = blocks.iter().filter(|b| {
+                if let ContentBlock::ToolResult { tool_use_id, .. } = b {
+                    seen_ids.insert(tool_use_id.clone())
+                } else {
+                    true
+                }
+            }).cloned().collect();
+            LlmMessage { role: msg.role.clone(), content: LlmContent::Blocks(deduped) }
+        }
+        _ => msg.clone(),
     }
 }
 

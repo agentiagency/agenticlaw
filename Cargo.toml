@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [workspace.dependencies]
@@ -79,7 +79,7 @@ codegen-units = 1
 
 [package]
 name = "agenticlaw"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
