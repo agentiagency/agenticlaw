@@ -418,3 +418,39 @@ async fn agent_runtime_max_iterations_enforced() {
 
     let _ = std::fs::remove_dir_all(&ws);
 }
+
+#[tokio::test]
+async fn tool_results_collected_in_single_message() {
+    use agenticlaw_llm::{ContentBlock, LlmContent};
+    
+    let session = agenticlaw_agent::Session::new(
+        agenticlaw_agent::SessionKey::from("test-tool-collect".to_string()),
+        Some("test"),
+    );
+    
+    // Add assistant message with 3 tool_use blocks
+    let blocks = vec![
+        ContentBlock::ToolUse { id: "tool_A".into(), name: "bash".into(), input: serde_json::json!({}) },
+        ContentBlock::ToolUse { id: "tool_B".into(), name: "glob".into(), input: serde_json::json!({}) },
+        ContentBlock::ToolUse { id: "tool_C".into(), name: "read".into(), input: serde_json::json!({}) },
+    ];
+    session.add_assistant_with_tools(None, blocks).await;
+    
+    // Add 3 tool results
+    session.add_tool_result("tool_A", "result A", false).await;
+    session.add_tool_result("tool_B", "result B", false).await;
+    session.add_tool_result("tool_C", "result C", true).await;
+    
+    let messages = session.get_messages().await;
+    // Should be: system + assistant + ONE user message (not three)
+    // system is index 0 (if set), assistant is index 1, user is index 2
+    let user_msgs: Vec<_> = messages.iter().filter(|m| m.role == "user").collect();
+    assert_eq!(user_msgs.len(), 1, "Expected 1 user message, got {}", user_msgs.len());
+    
+    if let LlmContent::Blocks(blocks) = &user_msgs[0].content {
+        let result_count = blocks.iter().filter(|b| matches!(b, ContentBlock::ToolResult { .. })).count();
+        assert_eq!(result_count, 3, "Expected 3 tool_result blocks in single message, got {}", result_count);
+    } else {
+        panic!("Expected Blocks content");
+    }
+}
