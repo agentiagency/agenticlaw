@@ -4,8 +4,8 @@
 //! The executor decomposes issue → analysis/impl/pr → leaf nodes,
 //! each with CODE-prepared FEAR/EGO/PURPOSE.
 
-use agenticlaw_kg::{Executor, RunConfig, LocalFsDriver, ResourceDriver};
 use agenticlaw_agent::runtime::{AgentConfig, AgentRuntime};
+use agenticlaw_kg::{Executor, LocalFsDriver, ResourceDriver, RunConfig};
 use agenticlaw_tools::create_default_registry;
 use clap::Parser;
 use std::path::PathBuf;
@@ -55,7 +55,10 @@ fn print_tree(reg: &agenticlaw_kg::NodeTypeRegistry, id: &str, depth: usize) {
     let kind = if nt.is_leaf { "[L]" } else { "[P]" };
     let role = &nt.role;
     let taxonomy = nt.taxonomy_ref.as_deref().unwrap_or("-");
-    println!("{}{} {} ({}) role={} taxonomy={}", indent, kind, nt.id, nt.name, role, taxonomy);
+    println!(
+        "{}{} {} ({}) role={} taxonomy={}",
+        indent, kind, nt.id, nt.name, role, taxonomy
+    );
     if let Some(criterion) = &nt.success_criterion {
         println!("{}    ✓ {}", indent, criterion);
     }
@@ -84,8 +87,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .expect("ANTHROPIC_API_KEY must be set");
+    let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
 
     let workspace = cli.workspace.canonicalize().unwrap_or(cli.workspace);
     let tools = create_default_registry(&workspace);
@@ -129,7 +131,10 @@ async fn main() -> anyhow::Result<()> {
     println!("Outcome: {}", manifest.outcome);
     println!("Tokens: {}", manifest.total_tokens);
     println!("Wall: {}ms", manifest.total_wall_ms);
-    println!("Location: {}", ResourceDriver::run_location(driver.as_ref(), &manifest.run_id));
+    println!(
+        "Location: {}",
+        ResourceDriver::run_location(driver.as_ref(), &manifest.run_id)
+    );
 
     // Print node tree with results
     println!("\nNode Results:");
@@ -139,7 +144,10 @@ async fn main() -> anyhow::Result<()> {
             agenticlaw_kg::NodeState::Failed => "✗",
             _ => "○",
         };
-        println!("  {} {} ({} tokens, {}ms)", icon, addr, node.tokens, node.wall_ms);
+        println!(
+            "  {} {} ({} tokens, {}ms)",
+            icon, addr, node.tokens, node.wall_ms
+        );
     }
 
     Ok(())

@@ -12,7 +12,9 @@ pub struct ReadTool {
 
 impl ReadTool {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        Self { workspace_root: workspace_root.as_ref().to_path_buf() }
+        Self {
+            workspace_root: workspace_root.as_ref().to_path_buf(),
+        }
     }
 
     fn resolve_path(&self, path: &str) -> Result<PathBuf, String> {
@@ -34,7 +36,9 @@ impl ReadTool {
 
 #[async_trait::async_trait]
 impl Tool for ReadTool {
-    fn name(&self) -> &str { "read" }
+    fn name(&self) -> &str {
+        "read"
+    }
 
     fn description(&self) -> &str {
         "Read the contents of a file. Returns numbered lines. Use offset/limit for large files."
@@ -44,7 +48,9 @@ impl Tool for ReadTool {
         "Use the read tool to view files. Read files before editing them."
     }
 
-    fn is_read_only(&self) -> bool { true }
+    fn is_read_only(&self) -> bool {
+        true
+    }
 
     fn input_schema(&self) -> Value {
         json!({
@@ -68,7 +74,11 @@ impl Tool for ReadTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult {
-        let path = match args.get("file_path").or(args.get("path")).and_then(|v| v.as_str()) {
+        let path = match args
+            .get("file_path")
+            .or(args.get("path"))
+            .and_then(|v| v.as_str())
+        {
             Some(p) => p,
             None => return ToolResult::error("Missing required parameter: file_path"),
         };
@@ -91,11 +101,18 @@ impl Tool for ReadTool {
         let end = (start + limit).min(lines.len());
 
         // Number lines like cat -n
-        let result: Vec<String> = lines[start..end].iter().enumerate()
+        let result: Vec<String> = lines[start..end]
+            .iter()
+            .enumerate()
             .map(|(i, line)| format!("{:>6}\t{}", start + i + 1, line))
             .collect();
 
-        debug!("read: {} ({} lines from offset {})", path, end - start, offset);
+        debug!(
+            "read: {} ({} lines from offset {})",
+            path,
+            end - start,
+            offset
+        );
         ToolResult::text(result.join("\n"))
     }
 }

@@ -12,13 +12,17 @@ pub struct WriteTool {
 
 impl WriteTool {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        Self { workspace_root: workspace_root.as_ref().to_path_buf() }
+        Self {
+            workspace_root: workspace_root.as_ref().to_path_buf(),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Tool for WriteTool {
-    fn name(&self) -> &str { "write" }
+    fn name(&self) -> &str {
+        "write"
+    }
 
     fn description(&self) -> &str {
         "Write content to a file. Creates parent directories if needed. \
@@ -43,7 +47,11 @@ impl Tool for WriteTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult {
-        let path = match args.get("file_path").or(args.get("path")).and_then(|v| v.as_str()) {
+        let path = match args
+            .get("file_path")
+            .or(args.get("path"))
+            .and_then(|v| v.as_str())
+        {
             Some(p) => p,
             None => return ToolResult::error("Missing required parameter: file_path"),
         };

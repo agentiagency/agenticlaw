@@ -12,13 +12,17 @@ pub struct EditTool {
 
 impl EditTool {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        Self { workspace_root: workspace_root.as_ref().to_path_buf() }
+        Self {
+            workspace_root: workspace_root.as_ref().to_path_buf(),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Tool for EditTool {
-    fn name(&self) -> &str { "edit" }
+    fn name(&self) -> &str {
+        "edit"
+    }
 
     fn description(&self) -> &str {
         "Edit a file by replacing an exact string match. The old_string must appear \
@@ -56,7 +60,11 @@ impl Tool for EditTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult {
-        let path = match args.get("file_path").or(args.get("path")).and_then(|v| v.as_str()) {
+        let path = match args
+            .get("file_path")
+            .or(args.get("path"))
+            .and_then(|v| v.as_str())
+        {
             Some(p) => p,
             None => return ToolResult::error("Missing required parameter: file_path"),
         };

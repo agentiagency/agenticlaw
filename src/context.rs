@@ -91,7 +91,9 @@ pub fn emit(events: &[SessionEvent], opts: &EmitOptions) -> String {
 
     for event in events {
         match event {
-            SessionEvent::Header { id, timestamp, cwd, .. } => {
+            SessionEvent::Header {
+                id, timestamp, cwd, ..
+            } => {
                 out.push_str(&format!("--- session: {} ---\n", id));
                 out.push_str(&format!("started: {}\n", timestamp));
                 if let Some(cwd) = cwd {
@@ -99,7 +101,11 @@ pub fn emit(events: &[SessionEvent], opts: &EmitOptions) -> String {
                 }
                 out.push('\n');
             }
-            SessionEvent::ModelChange { timestamp, provider, model_id } => {
+            SessionEvent::ModelChange {
+                timestamp,
+                provider,
+                model_id,
+            } => {
                 out.push_str(&format!(
                     "--- {} [model: {} ({})] ---\n\n",
                     timestamp, model_id, provider
@@ -207,9 +213,19 @@ fn summarize_tool_args(tool_name: &str, args: &serde_json::Value) -> String {
         "bash" => args
             .get("command")
             .and_then(|v| v.as_str())
-            .map(|s| if s.len() > 120 { format!("{}...", &s[..120]) } else { s.to_string() })
+            .map(|s| {
+                if s.len() > 120 {
+                    format!("{}...", &s[..120])
+                } else {
+                    s.to_string()
+                }
+            })
             .unwrap_or_default(),
-        "glob" => args.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        "glob" => args
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         "grep" => {
             let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
@@ -219,7 +235,11 @@ fn summarize_tool_args(tool_name: &str, args: &serde_json::Value) -> String {
             if let Some(obj) = args.as_object() {
                 for (k, v) in obj {
                     if let Some(s) = v.as_str() {
-                        let display = if s.len() > 100 { format!("{}...", &s[..100]) } else { s.to_string() };
+                        let display = if s.len() > 100 {
+                            format!("{}...", &s[..100])
+                        } else {
+                            s.to_string()
+                        };
                         return format!("{}={}", k, display);
                     }
                 }
@@ -255,7 +275,10 @@ pub fn parse(content: &str) -> ParseResult {
         let line = lines[i];
 
         // Session header: --- session: <id> ---
-        if let Some(id) = line.strip_prefix("--- session: ").and_then(|s| s.strip_suffix(" ---")) {
+        if let Some(id) = line
+            .strip_prefix("--- session: ")
+            .and_then(|s| s.strip_suffix(" ---"))
+        {
             let id = id.to_string();
             i += 1;
             let mut timestamp = String::new();
@@ -287,10 +310,16 @@ pub fn parse(content: &str) -> ParseResult {
                 let timestamp = inner[..inner.find('[').unwrap()].trim().to_string();
                 // Parse "model_id (provider)"
                 if let Some((model_id, provider)) = parse_model_annotation(rest) {
-                    events.push(SessionEvent::ModelChange { timestamp, provider, model_id });
+                    events.push(SessionEvent::ModelChange {
+                        timestamp,
+                        provider,
+                        model_id,
+                    });
                 }
                 i += 1;
-                if i < lines.len() && lines[i].is_empty() { i += 1; }
+                if i < lines.len() && lines[i].is_empty() {
+                    i += 1;
+                }
                 continue;
             }
 
@@ -302,7 +331,9 @@ pub fn parse(content: &str) -> ParseResult {
                     level: rest.to_string(),
                 });
                 i += 1;
-                if i < lines.len() && lines[i].is_empty() { i += 1; }
+                if i < lines.len() && lines[i].is_empty() {
+                    i += 1;
+                }
                 continue;
             }
 
@@ -312,14 +343,19 @@ pub fn parse(content: &str) -> ParseResult {
                 i += 1;
                 let mut summary_lines = Vec::new();
                 while i < lines.len() && !lines[i].starts_with("--- ") {
-                    if lines[i].is_empty() && i + 1 < lines.len() && lines[i + 1].starts_with("--- ") {
+                    if lines[i].is_empty()
+                        && i + 1 < lines.len()
+                        && lines[i + 1].starts_with("--- ")
+                    {
                         break;
                     }
                     summary_lines.push(lines[i]);
                     i += 1;
                 }
                 // Skip trailing blank
-                if i < lines.len() && lines[i].is_empty() { i += 1; }
+                if i < lines.len() && lines[i].is_empty() {
+                    i += 1;
+                }
                 events.push(SessionEvent::Compaction {
                     timestamp,
                     summary: summary_lines.join("\n"),
@@ -333,7 +369,9 @@ pub fn parse(content: &str) -> ParseResult {
 
             // Check for <up> tag (user turn)
             let is_user = i < lines.len() && lines[i] == "<up>";
-            if is_user { i += 1; }
+            if is_user {
+                i += 1;
+            }
 
             let mut contents = Vec::new();
             while i < lines.len() {
@@ -348,7 +386,10 @@ pub fn parse(content: &str) -> ParseResult {
                     break;
                 }
                 // Blank line after non-user turn = end of turn
-                if !is_user && l.is_empty() && (i + 1 >= lines.len() || lines[i + 1].starts_with("--- ")) {
+                if !is_user
+                    && l.is_empty()
+                    && (i + 1 >= lines.len() || lines[i + 1].starts_with("--- "))
+                {
                     i += 1;
                     break;
                 }
@@ -388,7 +429,9 @@ pub fn parse(content: &str) -> ParseResult {
             }
 
             // Skip trailing blank after turn
-            if i < lines.len() && lines[i].is_empty() { i += 1; }
+            if i < lines.len() && lines[i].is_empty() {
+                i += 1;
+            }
 
             if !contents.is_empty() {
                 let role = if is_user { "user" } else { "assistant" }.to_string();
@@ -482,7 +525,14 @@ fn parse_tool_block(lines: &[&str], start: usize) -> (ToolInteraction, usize) {
         serde_json::json!({})
     };
 
-    (ToolInteraction { name, arguments, result }, i)
+    (
+        ToolInteraction {
+            name,
+            arguments,
+            result,
+        },
+        i,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -501,13 +551,20 @@ impl CleanContextSession {
     pub fn from_str(content: &str) -> Self {
         let result = parse(content);
 
-        let (id, timestamp, cwd) = result.events.iter().find_map(|e| {
-            if let SessionEvent::Header { id, timestamp, cwd, .. } = e {
-                Some((id.clone(), timestamp.clone(), cwd.clone()))
-            } else {
-                None
-            }
-        }).unwrap_or_default();
+        let (id, timestamp, cwd) = result
+            .events
+            .iter()
+            .find_map(|e| {
+                if let SessionEvent::Header {
+                    id, timestamp, cwd, ..
+                } = e
+                {
+                    Some((id.clone(), timestamp.clone(), cwd.clone()))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
 
         CleanContextSession {
             id,
@@ -525,10 +582,18 @@ impl CleanContextSession {
 }
 
 impl Session for CleanContextSession {
-    fn id(&self) -> &str { &self.id }
-    fn timestamp(&self) -> &str { &self.timestamp }
-    fn cwd(&self) -> Option<&str> { self.cwd.as_deref() }
-    fn events(&self) -> &[SessionEvent] { &self.events }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn timestamp(&self) -> &str {
+        &self.timestamp
+    }
+    fn cwd(&self) -> Option<&str> {
+        self.cwd.as_deref()
+    }
+    fn events(&self) -> &[SessionEvent] {
+        &self.events
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +606,7 @@ pub fn init_session(
     session_id: &str,
     timestamp: &str,
     cwd: Option<&str>,
-    context_files: &[&str],  // file contents in order
+    context_files: &[&str], // file contents in order
 ) -> String {
     let mut out = String::new();
     out.push_str(&format!("--- session: {} ---\n", session_id));
@@ -580,7 +645,12 @@ pub fn to_wire(events: &[SessionEvent]) -> String {
 
     for event in events {
         match event {
-            SessionEvent::Header { version, id, timestamp, cwd } => {
+            SessionEvent::Header {
+                version,
+                id,
+                timestamp,
+                cwd,
+            } => {
                 let mut obj = serde_json::json!({
                     "type": "session",
                     "version": version,
@@ -592,7 +662,11 @@ pub fn to_wire(events: &[SessionEvent]) -> String {
                 }
                 lines.push(serde_json::to_string(&obj).unwrap());
             }
-            SessionEvent::ModelChange { timestamp, provider, model_id } => {
+            SessionEvent::ModelChange {
+                timestamp,
+                provider,
+                model_id,
+            } => {
                 let obj = serde_json::json!({
                     "type": "model_change",
                     "id": format!("mc-{}", &timestamp[..19].replace(':', "")),
@@ -694,7 +768,9 @@ pub fn from_wire_response(jsonl_line: &str) -> Option<String> {
     let record: serde_json::Value = serde_json::from_str(jsonl_line).ok()?;
     let msg = record.get("message")?;
     let role = msg.get("role")?.as_str()?;
-    if role != "assistant" { return None; }
+    if role != "assistant" {
+        return None;
+    }
 
     let timestamp = record.get("timestamp")?.as_str()?;
     let mut out = format!("--- {} ---\n", timestamp);
@@ -714,8 +790,14 @@ pub fn from_wire_response(jsonl_line: &str) -> Option<String> {
                     }
                 }
                 Some("toolCall") => {
-                    let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-                    let args = block.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+                    let name = block
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+                    let args = block
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({}));
                     let summary = summarize_tool_args(name, &args);
                     out.push_str(&format!("[tool:{}] {}\n", name, summary));
                 }

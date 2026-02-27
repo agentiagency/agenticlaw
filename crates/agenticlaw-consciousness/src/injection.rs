@@ -36,7 +36,12 @@ fn safe_byte_boundary(s: &str, byte_idx: usize) -> usize {
 
 /// Write an injection from a layer (L2, L3).
 /// Tag-free: source is logged at INFO but not written into the file.
-pub fn write_layer_injection(workspace: &Path, from_layer: usize, content: &str, max_chars: usize) -> std::io::Result<()> {
+pub fn write_layer_injection(
+    workspace: &Path,
+    from_layer: usize,
+    content: &str,
+    max_chars: usize,
+) -> std::io::Result<()> {
     let dir = injection_dir(workspace);
     fs::create_dir_all(&dir)?;
 
@@ -60,7 +65,12 @@ pub fn write_layer_injection(workspace: &Path, from_layer: usize, content: &str,
 
 /// Write an injection from a core (Core-A, Core-B).
 /// Tag-free: source is logged at INFO but not written into the file.
-pub fn write_injection(workspace: &Path, core_id: CoreId, content: &str, max_chars: usize) -> std::io::Result<()> {
+pub fn write_injection(
+    workspace: &Path,
+    core_id: CoreId,
+    content: &str,
+    max_chars: usize,
+) -> std::io::Result<()> {
     let dir = injection_dir(workspace);
     fs::create_dir_all(&dir)?;
 
@@ -72,7 +82,11 @@ pub fn write_injection(workspace: &Path, core_id: CoreId, content: &str, max_cha
     };
 
     let injection = bounded.trim().to_string();
-    info!("Injection from {}: {} chars", core_id.dir_name(), injection.len());
+    info!(
+        "Injection from {}: {} chars",
+        core_id.dir_name(),
+        injection.len()
+    );
 
     let filename = format!("inject-{}.txt", uuid::Uuid::new_v4());
     let path = dir.join(filename);
@@ -152,8 +166,14 @@ pub fn read_and_clear_injections(workspace: &Path) -> String {
         return String::new();
     }
 
-    info!("Injecting {} insights into gateway context", injections.len());
-    format!("\n--- consciousness injections ---\n{}\n--- end injections ---\n", injections.join("\n"))
+    info!(
+        "Injecting {} insights into gateway context",
+        injections.len()
+    );
+    format!(
+        "\n--- consciousness injections ---\n{}\n--- end injections ---\n",
+        injections.join("\n")
+    )
 }
 
 /// Simple NLP correlation check: do the two texts share significant terms?

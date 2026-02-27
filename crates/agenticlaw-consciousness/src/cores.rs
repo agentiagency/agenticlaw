@@ -138,12 +138,7 @@ pub struct DualCore {
 }
 
 impl DualCore {
-    pub fn new(
-        workspace: PathBuf,
-        api_key: &str,
-        soul: &str,
-        models: [String; 2],
-    ) -> Self {
+    pub fn new(workspace: PathBuf, api_key: &str, soul: &str, models: [String; 2]) -> Self {
         let runtimes = std::array::from_fn(|i| {
             let core_ws = workspace.join(CoreId::from_index(i).dir_name());
             let _ = std::fs::create_dir_all(&core_ws);
@@ -176,8 +171,10 @@ impl DualCore {
             match std::fs::read_to_string(state_path) {
                 Ok(json) => match serde_json::from_str::<CoreState>(&json) {
                     Ok(state) => {
-                        info!("Hydrated core state from checkpoint: A={:?} B={:?}",
-                            state.core_a.phase, state.core_b.phase);
+                        info!(
+                            "Hydrated core state from checkpoint: A={:?} B={:?}",
+                            state.core_a.phase, state.core_b.phase
+                        );
                         return state;
                     }
                     Err(e) => warn!("Failed to parse core-state.json: {}, creating fresh", e),
@@ -237,7 +234,10 @@ impl DualCore {
             let permit = match sem.try_acquire_owned() {
                 Ok(p) => p,
                 Err(_) => {
-                    info!("{} already processing, skipping delta", CORE_NAMES[core_id.index()]);
+                    info!(
+                        "{} already processing, skipping delta",
+                        CORE_NAMES[core_id.index()]
+                    );
                     continue;
                 }
             };
@@ -266,7 +266,11 @@ impl DualCore {
                     return;
                 }
 
-                info!("{} produced {} chars", CORE_NAMES[core_id.index()], response.len());
+                info!(
+                    "{} produced {} chars",
+                    CORE_NAMES[core_id.index()],
+                    response.len()
+                );
 
                 let delta_tokens = estimate_tokens(&response);
 
@@ -289,8 +293,11 @@ impl DualCore {
                 if my_tokens >= budget_half && state.core(core_id).phase == CorePhase::Growing {
                     state.core_mut(core_id).phase = CorePhase::Ready;
                     ready_since.lock().await[core_id.index()] = Some(Instant::now());
-                    info!("{} reached budget half ({} tokens), entering Ready phase",
-                        CORE_NAMES[core_id.index()], my_tokens);
+                    info!(
+                        "{} reached budget half ({} tokens), entering Ready phase",
+                        CORE_NAMES[core_id.index()],
+                        my_tokens
+                    );
                 }
 
                 // Attempt compaction handshake if we're Ready
@@ -300,14 +307,22 @@ impl DualCore {
 
                     if peer_phase == CorePhase::Growing {
                         // Peer can approve — begin compaction
-                        info!("{} approved compaction of {}", CORE_NAMES[peer.index()], CORE_NAMES[core_id.index()]);
+                        info!(
+                            "{} approved compaction of {}",
+                            CORE_NAMES[peer.index()],
+                            CORE_NAMES[core_id.index()]
+                        );
                         state.core_mut(core_id).phase = CorePhase::Compacting;
                         checkpoint_state(&state_path, &state);
 
                         // Select seed from compacting core for peer
                         let seed = select_seed_from_response(&response, budget_half / 10);
-                        info!("{} compacting, seed {} chars for {}",
-                            CORE_NAMES[core_id.index()], seed.len(), CORE_NAMES[peer.index()]);
+                        info!(
+                            "{} compacting, seed {} chars for {}",
+                            CORE_NAMES[core_id.index()],
+                            seed.len(),
+                            CORE_NAMES[peer.index()]
+                        );
 
                         // Write seed as injection into the peer's workspace
                         let peer_dir = self_ws.join(peer.dir_name());
@@ -326,17 +341,20 @@ impl DualCore {
                 }
 
                 // Check tie-breaker: if both Ready, fewer samples compacts first
-                if state.core_a.phase == CorePhase::Ready && state.core_b.phase == CorePhase::Ready {
+                if state.core_a.phase == CorePhase::Ready && state.core_b.phase == CorePhase::Ready
+                {
                     let compactor = if state.core_a.samples <= state.core_b.samples {
                         CoreId::A
                     } else {
                         CoreId::B
                     };
                     let approver = compactor.other();
-                    info!("Tie-breaker: {} compacts (fewer samples: {} vs {})",
+                    info!(
+                        "Tie-breaker: {} compacts (fewer samples: {} vs {})",
                         CORE_NAMES[compactor.index()],
                         state.core(compactor).samples,
-                        state.core(approver).samples);
+                        state.core(approver).samples
+                    );
 
                     state.core_mut(compactor).phase = CorePhase::Compacting;
                     state.core_mut(approver).phase = CorePhase::Growing; // approver resumes
@@ -371,13 +389,13 @@ impl DualCore {
 
                     let score = injection::correlation_score(l0_tail, &response);
                     if score > 0.1 {
-                        info!("{} injecting into L0 (correlation: {:.2})", CORE_NAMES[core_id.index()], score);
-                        let _ = injection::write_injection(
-                            &ws,
-                            core_id,
-                            &response,
-                            delta_owned.len(),
+                        info!(
+                            "{} injecting into L0 (correlation: {:.2})",
+                            CORE_NAMES[core_id.index()],
+                            score
                         );
+                        let _ =
+                            injection::write_injection(&ws, core_id, &response, delta_owned.len());
                     }
                 }
 
@@ -387,7 +405,11 @@ impl DualCore {
                         let seed_file = self_ws.join(cid.dir_name()).join("seed.txt");
                         if seed_file.exists() {
                             if let Ok(seed) = std::fs::read_to_string(&seed_file) {
-                                info!("{} absorbing seed ({} chars)", CORE_NAMES[cid.index()], seed.len());
+                                info!(
+                                    "{} absorbing seed ({} chars)",
+                                    CORE_NAMES[cid.index()],
+                                    seed.len()
+                                );
                                 state.core_mut(cid).phase = CorePhase::Seeded;
                                 state.core_mut(cid).estimated_tokens = estimate_tokens(&seed);
                                 let _ = std::fs::remove_file(&seed_file);
@@ -408,7 +430,10 @@ impl DualCore {
             if let Some(since) = ready[core_id.index()] {
                 if since.elapsed() > Duration::from_secs(30) {
                     if state.core(core_id).phase == CorePhase::Ready {
-                        warn!("{} Ready timeout (30s), reverting to Growing", CORE_NAMES[core_id.index()]);
+                        warn!(
+                            "{} Ready timeout (30s), reverting to Growing",
+                            CORE_NAMES[core_id.index()]
+                        );
                         state.core_mut(core_id).phase = CorePhase::Growing;
                         ready[core_id.index()] = None;
                         checkpoint_state(&self.state_path, &state);
@@ -482,7 +507,8 @@ async fn run_core_turn(runtime: &AgentRuntime, core_id: CoreId, prompt: &str) ->
 /// Entropy-law seed selection: pick the most information-dense paragraphs
 /// that fit within the token budget.
 fn select_seed_from_response(text: &str, budget_tokens: usize) -> String {
-    let paragraphs: Vec<&str> = text.split("\n\n")
+    let paragraphs: Vec<&str> = text
+        .split("\n\n")
         .map(|p| p.trim())
         .filter(|p| !p.is_empty())
         .collect();
@@ -493,22 +519,27 @@ fn select_seed_from_response(text: &str, budget_tokens: usize) -> String {
 
     // Score each paragraph by information density with recency bias
     let total_paragraphs = paragraphs.len();
-    let mut scored: Vec<(usize, f64, &str)> = paragraphs.iter().enumerate().map(|(i, p)| {
-        let words: Vec<&str> = p.split_whitespace().collect();
-        let total_terms = words.len().max(1);
-        let unique_terms: HashSet<&str> = words.iter()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-            .filter(|w| !w.is_empty())
-            .collect();
+    let mut scored: Vec<(usize, f64, &str)> = paragraphs
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let words: Vec<&str> = p.split_whitespace().collect();
+            let total_terms = words.len().max(1);
+            let unique_terms: HashSet<&str> = words
+                .iter()
+                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+                .filter(|w| !w.is_empty())
+                .collect();
 
-        let density = unique_terms.len() as f64 / total_terms as f64;
+            let density = unique_terms.len() as f64 / total_terms as f64;
 
-        // Recency bias: paragraphs later in the text score higher
-        let recency = (i as f64 + 1.0) / total_paragraphs as f64;
+            // Recency bias: paragraphs later in the text score higher
+            let recency = (i as f64 + 1.0) / total_paragraphs as f64;
 
-        let score = density * 0.7 + recency * 0.3;
-        (i, score, *p)
-    }).collect();
+            let score = density * 0.7 + recency * 0.3;
+            (i, score, *p)
+        })
+        .collect();
 
     // Sort by score descending
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -530,7 +561,11 @@ fn select_seed_from_response(text: &str, budget_tokens: usize) -> String {
     // Sort by original order to maintain coherence
     selected.sort_by_key(|(idx, _)| *idx);
 
-    selected.into_iter().map(|(_, p)| p).collect::<Vec<_>>().join("\n\n")
+    selected
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 #[cfg(test)]
 mod tests {
@@ -577,8 +612,8 @@ mod tests {
     #[test]
     fn safe_boundary_multibyte() {
         let s = "hi\u{1F980}bye"; // 🦀 is 4 bytes
-        // "hi" = 2 bytes, crab = 4 bytes (bytes 2..6), "bye" = 3 bytes
-        // Asking for boundary at byte 4 (middle of crab) should back up to 2
+                                  // "hi" = 2 bytes, crab = 4 bytes (bytes 2..6), "bye" = 3 bytes
+                                  // Asking for boundary at byte 4 (middle of crab) should back up to 2
         assert_eq!(safe_byte_boundary(s, 4), 2);
         assert_eq!(safe_byte_boundary(s, 3), 2);
         // Byte 2 is the start of crab, that is a valid boundary
@@ -647,7 +682,8 @@ mod tests {
     #[test]
     fn seed_selection_favors_density_and_recency() {
         // Paragraph with all unique words (high density) vs repetitive paragraph
-        let unique_para = "consciousness gateway injection correlation threshold cascade delta watcher";
+        let unique_para =
+            "consciousness gateway injection correlation threshold cascade delta watcher";
         let repetitive_para = "word word word word word word word word word word";
         // Put unique paragraph LAST for recency bonus too
         let text = format!("{}\n\n{}", repetitive_para, unique_para);
@@ -748,6 +784,9 @@ mod tests {
         checkpoint_state(&path, &state);
 
         assert!(path.exists());
-        assert!(!tmp_path.exists(), "Temp file should not persist after atomic rename");
+        assert!(
+            !tmp_path.exists(),
+            "Temp file should not persist after atomic rename"
+        );
     }
 }

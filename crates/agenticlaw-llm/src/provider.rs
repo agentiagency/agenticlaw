@@ -42,7 +42,9 @@ pub trait LlmProvider: Send + Sync {
     fn models(&self) -> &[&str];
 
     fn supports_model(&self, model: &str) -> bool {
-        self.models().iter().any(|m| *m == model || model.starts_with(m))
+        self.models()
+            .iter()
+            .any(|m| *m == model || model.starts_with(m))
     }
 
     async fn complete_stream(&self, request: LlmRequest) -> LlmResult<LlmStream>;

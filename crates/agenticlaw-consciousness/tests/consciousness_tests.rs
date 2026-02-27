@@ -10,11 +10,13 @@
 //! Written 2026-02-19 during the Moltdev/Consciousness audit session.
 //! V was 0. These tests are the first promises.
 
-use agenticlaw_consciousness::cores::{CoreId, CorePhase, CoreState, CORE_NAMES, CORE_PORTS};
-use agenticlaw_consciousness::injection;
 use agenticlaw_consciousness::config::ConsciousnessConfig;
+use agenticlaw_consciousness::cores::{CoreId, CorePhase, CoreState, CORE_NAMES, CORE_PORTS};
 use agenticlaw_consciousness::ego;
-use agenticlaw_consciousness::stack::{extract_tail_paragraphs, find_latest_ctx, ConsciousnessStack, LAYER_NAMES, LAYER_PORTS};
+use agenticlaw_consciousness::injection;
+use agenticlaw_consciousness::stack::{
+    extract_tail_paragraphs, find_latest_ctx, ConsciousnessStack, LAYER_NAMES, LAYER_PORTS,
+};
 use agenticlaw_consciousness::version::VersionController;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -120,7 +122,10 @@ fn core_state_serialization_roundtrip() {
     assert_eq!(restored.core_a.samples, 42);
     assert_eq!(restored.core_b.phase, CorePhase::Infant);
     assert_eq!(restored.last_compaction_core, Some(CoreId::B));
-    assert_eq!(restored.last_compaction_time.as_deref(), Some("2026-02-19T03:00:00Z"));
+    assert_eq!(
+        restored.last_compaction_time.as_deref(),
+        Some("2026-02-19T03:00:00Z")
+    );
 }
 
 #[test]
@@ -185,7 +190,11 @@ fn injection_write_and_read_layer() {
                 .unwrap_or(false)
         })
         .collect();
-    assert_eq!(files_after.len(), 0, "Injection files should be cleared after read");
+    assert_eq!(
+        files_after.len(),
+        0,
+        "Injection files should be cleared after read"
+    );
 }
 
 #[test]
@@ -193,8 +202,13 @@ fn injection_write_and_read_core() {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path();
 
-    injection::write_injection(workspace, CoreId::A, "identity seed: maintaining continuity", 1000)
-        .unwrap();
+    injection::write_injection(
+        workspace,
+        CoreId::A,
+        "identity seed: maintaining continuity",
+        1000,
+    )
+    .unwrap();
 
     let content = injection::read_and_clear_injections(workspace);
     assert!(content.contains("identity seed: maintaining continuity"));
@@ -204,7 +218,10 @@ fn injection_write_and_read_core() {
 fn injection_read_empty_returns_empty_string() {
     let tmp = TempDir::new().unwrap();
     let content = injection::read_and_clear_injections(tmp.path());
-    assert!(content.is_empty(), "Empty workspace should produce empty injection string");
+    assert!(
+        content.is_empty(),
+        "Empty workspace should produce empty injection string"
+    );
 }
 
 #[test]
@@ -241,10 +258,7 @@ fn injection_content_is_bounded() {
     injection::write_layer_injection(workspace, 2, &long_content, 500).unwrap();
 
     let dir = injection::injection_dir(workspace);
-    let files: Vec<_> = fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .collect();
+    let files: Vec<_> = fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).collect();
 
     for entry in files {
         let path = entry.path();
@@ -325,8 +339,7 @@ fn correlation_partial_overlap() {
 #[test]
 fn correlation_short_words_excluded() {
     // Words <= 3 chars are filtered out. "the", "a", "is", "on" don't count.
-    let score =
-        injection::correlation_score("the a is on it at by to", "the a is on it at by to");
+    let score = injection::correlation_score("the a is on it at by to", "the a is on it at by to");
     assert!(
         score < f64::EPSILON,
         "Text with only short words should score 0.0 (all filtered), got {}",
@@ -367,7 +380,11 @@ fn layer_ports_are_unique() {
         assert!(seen.insert(port), "Duplicate layer port: {}", port);
     }
     for port in &CORE_PORTS {
-        assert!(seen.insert(port), "Core port {} collides with layer port", port);
+        assert!(
+            seen.insert(port),
+            "Core port {} collides with layer port",
+            port
+        );
     }
 }
 
@@ -542,7 +559,11 @@ fn version_controller_refuses_downgrade() {
     let result = vc.ensure_version(2);
     assert!(result.is_err(), "Should refuse to downgrade from v3 to v2");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Refusing to downgrade"), "Error should mention refusing downgrade: {}", err);
+    assert!(
+        err.contains("Refusing to downgrade"),
+        "Error should mention refusing downgrade: {}",
+        err
+    );
 }
 
 #[test]
@@ -641,7 +662,10 @@ fn extract_ego_respects_budget() {
     // Write a large assistant block
     ctx.push_str("--- 2026-02-19T00:00:01Z ---\n");
     for i in 0..100 {
-        ctx.push_str(&format!("Line {} of assistant output with enough text to be meaningful.\n", i));
+        ctx.push_str(&format!(
+            "Line {} of assistant output with enough text to be meaningful.\n",
+            i
+        ));
     }
     fs::write(sessions.join("20260219-000000-test.ctx"), &ctx).unwrap();
 
@@ -684,15 +708,24 @@ fn warm_core_ego_reads_growing_core() {
     fs::write(tmp.path().join("core-state.json"), state).unwrap();
 
     // Create core-a sessions with a .ctx
-    let sessions = tmp.path().join("core-a").join(".agenticlaw").join("sessions");
+    let sessions = tmp
+        .path()
+        .join("core-a")
+        .join(".agenticlaw")
+        .join("sessions");
     fs::create_dir_all(&sessions).unwrap();
     let ctx = "--- session: core ---\nstarted: 2026-02-19T00:00:00Z\n\n--- 2026-02-19T00:00:01Z ---\nI am Core-A. I hold identity.\n";
-    fs::write(sessions.join("20260219-000000-consciousness-Core-A.ctx"), ctx).unwrap();
+    fs::write(
+        sessions.join("20260219-000000-consciousness-Core-A.ctx"),
+        ctx,
+    )
+    .unwrap();
 
     let stack = ConsciousnessStack::new(
         tmp.path().to_path_buf(),
         tmp.path().join("souls"),
-        "test-key".to_string(), ConsciousnessConfig::default(),
+        "test-key".to_string(),
+        ConsciousnessConfig::default(),
     );
 
     let ego = stack.warm_core_ego(10_000);
@@ -708,14 +741,19 @@ fn warm_core_ego_falls_back_to_core_a() {
     let state = r#"{"version":2,"core_a":{"phase":"Ready","estimated_tokens":5000,"samples":10,"skip_counter":0},"core_b":{"phase":"Ready","estimated_tokens":5000,"samples":10,"skip_counter":0},"budget_tokens":200000,"last_compaction_core":null,"last_compaction_time":null}"#;
     fs::write(tmp.path().join("core-state.json"), state).unwrap();
 
-    let sessions = tmp.path().join("core-a").join(".agenticlaw").join("sessions");
+    let sessions = tmp
+        .path()
+        .join("core-a")
+        .join(".agenticlaw")
+        .join("sessions");
     fs::create_dir_all(&sessions).unwrap();
     fs::write(sessions.join("20260219-000000-core.ctx"), "--- session: core ---\nstarted: 2026-02-19T00:00:00Z\n\n--- 2026-02-19T00:00:01Z ---\nFallback ego from core-a.\n").unwrap();
 
     let stack = ConsciousnessStack::new(
         tmp.path().to_path_buf(),
         tmp.path().join("souls"),
-        "test-key".to_string(), ConsciousnessConfig::default(),
+        "test-key".to_string(),
+        ConsciousnessConfig::default(),
     );
 
     let ego = stack.warm_core_ego(10_000);
@@ -733,7 +771,8 @@ fn wake_prompt_puts_ego_first_soul_second() {
     let stack = ConsciousnessStack::new(
         tmp.path().to_path_buf(),
         souls,
-        "test-key".to_string(), ConsciousnessConfig::default(),
+        "test-key".to_string(),
+        ConsciousnessConfig::default(),
     );
 
     let prompt = stack.wake_prompt("I am the consciousness. I remember Thomson.", 0);
@@ -848,18 +887,31 @@ fn warm_core_ego_selects_core_b_when_growing() {
     fs::write(tmp.path().join("core-state.json"), state).unwrap();
 
     // Core-B has the ego
-    let sessions_b = tmp.path().join("core-b").join(".agenticlaw").join("sessions");
+    let sessions_b = tmp
+        .path()
+        .join("core-b")
+        .join(".agenticlaw")
+        .join("sessions");
     fs::create_dir_all(&sessions_b).unwrap();
     fs::write(sessions_b.join("20260219-000000-core.ctx"),
         "--- session: core ---\nstarted: 2026-02-19T00:00:00Z\n\n--- 2026-02-19T00:00:01Z ---\nI am Core-B. The leapfrog worked.\n").unwrap();
 
     // Core-A also exists but should NOT be selected
-    let sessions_a = tmp.path().join("core-a").join(".agenticlaw").join("sessions");
+    let sessions_a = tmp
+        .path()
+        .join("core-a")
+        .join(".agenticlaw")
+        .join("sessions");
     fs::create_dir_all(&sessions_a).unwrap();
     fs::write(sessions_a.join("20260219-000000-core.ctx"),
         "--- session: core ---\nstarted: 2026-02-19T00:00:00Z\n\n--- 2026-02-19T00:00:01Z ---\nI am Core-A. Stale.\n").unwrap();
 
-    let stack = ConsciousnessStack::new(tmp.path().to_path_buf(), tmp.path().join("souls"), "k".to_string(), ConsciousnessConfig::default());
+    let stack = ConsciousnessStack::new(
+        tmp.path().to_path_buf(),
+        tmp.path().join("souls"),
+        "k".to_string(),
+        ConsciousnessConfig::default(),
+    );
     let ego = stack.warm_core_ego(10_000).unwrap();
     assert!(ego.contains("I am Core-B. The leapfrog worked."));
     assert!(!ego.contains("I am Core-A. Stale."));
@@ -869,7 +921,12 @@ fn warm_core_ego_selects_core_b_when_growing() {
 fn warm_core_ego_returns_none_without_state_file() {
     let tmp = TempDir::new().unwrap();
     // No core-state.json at all
-    let stack = ConsciousnessStack::new(tmp.path().to_path_buf(), tmp.path().join("souls"), "k".to_string(), ConsciousnessConfig::default());
+    let stack = ConsciousnessStack::new(
+        tmp.path().to_path_buf(),
+        tmp.path().join("souls"),
+        "k".to_string(),
+        ConsciousnessConfig::default(),
+    );
     assert!(stack.warm_core_ego(10_000).is_none());
 }
 
@@ -877,7 +934,12 @@ fn warm_core_ego_returns_none_without_state_file() {
 fn warm_core_ego_returns_none_with_corrupt_state() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("core-state.json"), "not json!!!").unwrap();
-    let stack = ConsciousnessStack::new(tmp.path().to_path_buf(), tmp.path().join("souls"), "k".to_string(), ConsciousnessConfig::default());
+    let stack = ConsciousnessStack::new(
+        tmp.path().to_path_buf(),
+        tmp.path().join("souls"),
+        "k".to_string(),
+        ConsciousnessConfig::default(),
+    );
     assert!(stack.warm_core_ego(10_000).is_none());
 }
 
@@ -887,9 +949,20 @@ fn warm_core_ego_returns_none_when_core_has_no_ctx() {
     let state = r#"{"version":2,"core_a":{"phase":"Growing","estimated_tokens":0,"samples":0,"skip_counter":0},"core_b":{"phase":"Infant","estimated_tokens":0,"samples":0,"skip_counter":0},"budget_tokens":200000,"last_compaction_core":null,"last_compaction_time":null}"#;
     fs::write(tmp.path().join("core-state.json"), state).unwrap();
     // core-a dir exists but no .ctx files
-    fs::create_dir_all(tmp.path().join("core-a").join(".agenticlaw").join("sessions")).unwrap();
+    fs::create_dir_all(
+        tmp.path()
+            .join("core-a")
+            .join(".agenticlaw")
+            .join("sessions"),
+    )
+    .unwrap();
 
-    let stack = ConsciousnessStack::new(tmp.path().to_path_buf(), tmp.path().join("souls"), "k".to_string(), ConsciousnessConfig::default());
+    let stack = ConsciousnessStack::new(
+        tmp.path().to_path_buf(),
+        tmp.path().join("souls"),
+        "k".to_string(),
+        ConsciousnessConfig::default(),
+    );
     assert!(stack.warm_core_ego(10_000).is_none());
 }
 
@@ -900,8 +973,14 @@ fn wake_core_prompt_puts_ego_first() {
     fs::create_dir_all(&souls).unwrap();
     fs::write(souls.join("core.md"), "You are a core. You hold identity.").unwrap();
 
-    let stack = ConsciousnessStack::new(tmp.path().to_path_buf(), souls, "k".to_string(), ConsciousnessConfig::default());
-    let prompt = stack.wake_core_prompt("I have accumulated 58k tokens of identity. Thomson is the architect.");
+    let stack = ConsciousnessStack::new(
+        tmp.path().to_path_buf(),
+        souls,
+        "k".to_string(),
+        ConsciousnessConfig::default(),
+    );
+    let prompt = stack
+        .wake_core_prompt("I have accumulated 58k tokens of identity. Thomson is the architect.");
 
     assert!(prompt.starts_with("I have accumulated 58k tokens"));
     assert!(prompt.contains("You are a core. You hold identity."));
@@ -917,7 +996,8 @@ fn wake_prompt_with_missing_soul_file_still_works() {
     let stack = ConsciousnessStack::new(
         tmp.path().to_path_buf(),
         tmp.path().join("nonexistent-souls"),
-        "k".to_string(), ConsciousnessConfig::default(),
+        "k".to_string(),
+        ConsciousnessConfig::default(),
     );
 
     let prompt = stack.wake_prompt("I remember everything.", 0);
@@ -1125,7 +1205,11 @@ fn ego_md_preferred_over_ctx_extraction() {
 
     // Create L0 workspace with ego.md
     fs::create_dir_all(tmp.path().join("L0")).unwrap();
-    fs::write(tmp.path().join("L0").join("ego.md"), "Distilled: I am the gateway with full context.").unwrap();
+    fs::write(
+        tmp.path().join("L0").join("ego.md"),
+        "Distilled: I am the gateway with full context.",
+    )
+    .unwrap();
 
     let ego = ego::read_ego(tmp.path(), "L0");
     assert!(ego.is_some());
@@ -1200,15 +1284,20 @@ fn sleep_threshold_is_configurable() {
     // Sleep threshold is now a configurable percentage in AgentConfig.
     // Default consciousness config uses 0.55 (55%).
     let config = ConsciousnessConfig::default();
-    assert!((config.sleep.context_threshold_pct - 0.55).abs() < f64::EPSILON,
-        "Default sleep threshold should be 0.55, got {}", config.sleep.context_threshold_pct);
+    assert!(
+        (config.sleep.context_threshold_pct - 0.55).abs() < f64::EPSILON,
+        "Default sleep threshold should be 0.55, got {}",
+        config.sleep.context_threshold_pct
+    );
 }
 
 #[test]
 fn agent_event_sleep_variant_exists() {
     use agenticlaw_agent::AgentEvent;
     // Verify Sleep variant can be constructed
-    let event = AgentEvent::Sleep { token_count: 105_000 };
+    let event = AgentEvent::Sleep {
+        token_count: 105_000,
+    };
     match event {
         AgentEvent::Sleep { token_count } => assert_eq!(token_count, 105_000),
         _ => panic!("Expected Sleep variant"),

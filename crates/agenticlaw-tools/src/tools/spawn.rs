@@ -57,7 +57,8 @@ impl SpawnTool {
     }
 
     fn next_child_id(&self) -> u64 {
-        self.child_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        self.child_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Write an artifact to the run directory (code, not agent).
@@ -74,7 +75,9 @@ impl SpawnTool {
 
 #[async_trait::async_trait]
 impl Tool for SpawnTool {
-    fn name(&self) -> &str { "spawn" }
+    fn name(&self) -> &str {
+        "spawn"
+    }
 
     fn description(&self) -> &str {
         "Spawn a child agent to perform a scoped task. The child has the full tool suite \
@@ -124,20 +127,28 @@ impl Tool for SpawnTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult {
-        let purpose = args.get("purpose").and_then(|v| v.as_str()).unwrap_or("unspecified");
+        let purpose = args
+            .get("purpose")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unspecified");
         let ego = args.get("ego").and_then(|v| v.as_str()).unwrap_or("");
         let fear = args.get("fear").and_then(|v| v.as_str()).unwrap_or("");
         let task = match args.get("task").and_then(|v| v.as_str()) {
             Some(t) => t,
             None => return ToolResult::error("'task' is required"),
         };
-        let max_iter = args.get("max_iterations")
+        let max_iter = args
+            .get("max_iterations")
             .and_then(|v| v.as_u64())
             .unwrap_or(25)
             .min(50) as usize;
 
         let child_id = self.next_child_id();
-        let session_id = format!("kg-child-{}-{}", child_id, chrono::Utc::now().format("%H%M%S"));
+        let session_id = format!(
+            "kg-child-{}-{}",
+            child_id,
+            chrono::Utc::now().format("%H%M%S")
+        );
 
         tracing::info!(
             child = %session_id,
@@ -146,19 +157,27 @@ impl Tool for SpawnTool {
         );
 
         // --- CODE: Write artifacts BEFORE spawn ---
-        let run_dir = self.runs_dir.as_ref().map(|d| {
-            d.join(format!("child-{}", session_id))
-        });
+        let run_dir = self
+            .runs_dir
+            .as_ref()
+            .map(|d| d.join(format!("child-{}", session_id)));
 
         if let Some(ref dir) = run_dir {
             self.write_artifact(dir, "purpose.md", purpose).await;
             self.write_artifact(dir, "ego.md", ego).await;
             self.write_artifact(dir, "fear.md", fear).await;
             self.write_artifact(dir, "prompt.md", task).await;
-            self.write_artifact(dir, "manifest.yaml", &format!(
-                "child_id: {}\npurpose: {:?}\nstarted: {}\nstatus: running\n",
-                session_id, purpose, chrono::Utc::now().to_rfc3339()
-            )).await;
+            self.write_artifact(
+                dir,
+                "manifest.yaml",
+                &format!(
+                    "child_id: {}\npurpose: {:?}\nstarted: {}\nstatus: running\n",
+                    session_id,
+                    purpose,
+                    chrono::Utc::now().to_rfc3339()
+                ),
+            )
+            .await;
         }
 
         // --- CODE: Build system prompt from FEAR/EGO/PURPOSE ---
@@ -175,7 +194,8 @@ impl Tool for SpawnTool {
 
         system_parts.push(
             "You are a focused agent. Read the files you need. Execute precisely. \
-             Report what you did and what changed.".into()
+             Report what you did and what changed."
+                .into(),
         );
 
         let system_prompt = system_parts.join("\n\n");
@@ -187,12 +207,16 @@ impl Tool for SpawnTool {
         let runtime = match runtime_guard.as_ref() {
             Some(r) => r.clone(),
             None => {
-                return ToolResult::error("Runtime not initialized — spawn tool cannot create child agents");
+                return ToolResult::error(
+                    "Runtime not initialized — spawn tool cannot create child agents",
+                );
             }
         };
         drop(runtime_guard); // release lock before async work
 
-        let result = runtime.spawn_child(&session_id, &system_prompt, task, max_iter).await;
+        let result = runtime
+            .spawn_child(&session_id, &system_prompt, task, max_iter)
+            .await;
         let wall_ms = start.elapsed().as_millis() as u64;
 
         // --- CODE: Write results AFTER spawn ---
@@ -207,9 +231,15 @@ impl Tool for SpawnTool {
 
                 if let Some(ref dir) = run_dir {
                     self.write_artifact(dir, "output.md", output).await;
-                    self.write_artifact(dir, "metrics.yaml", &format!(
-                        "tokens: {}\nwall_ms: {}\noutcome: success\n", tokens, wall_ms
-                    )).await;
+                    self.write_artifact(
+                        dir,
+                        "metrics.yaml",
+                        &format!(
+                            "tokens: {}\nwall_ms: {}\noutcome: success\n",
+                            tokens, wall_ms
+                        ),
+                    )
+                    .await;
                     // Update manifest
                     self.write_artifact(dir, "manifest.yaml", &format!(
                         "child_id: {}\npurpose: {:?}\nstarted: {}\nended: {}\nstatus: success\ntokens: {}\nwall_ms: {}\n",
@@ -228,10 +258,17 @@ impl Tool for SpawnTool {
                 );
 
                 if let Some(ref dir) = run_dir {
-                    self.write_artifact(dir, "output.md", &format!("ERROR: {}", e)).await;
-                    self.write_artifact(dir, "metrics.yaml", &format!(
-                        "tokens: 0\nwall_ms: {}\noutcome: failed\nerror: {:?}\n", wall_ms, e
-                    )).await;
+                    self.write_artifact(dir, "output.md", &format!("ERROR: {}", e))
+                        .await;
+                    self.write_artifact(
+                        dir,
+                        "metrics.yaml",
+                        &format!(
+                            "tokens: 0\nwall_ms: {}\noutcome: failed\nerror: {:?}\n",
+                            wall_ms, e
+                        ),
+                    )
+                    .await;
                 }
 
                 ToolResult::error(format!("Child agent failed: {}", e))

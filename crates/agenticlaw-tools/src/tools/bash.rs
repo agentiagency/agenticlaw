@@ -23,7 +23,9 @@ impl BashTool {
 
 #[async_trait::async_trait]
 impl Tool for BashTool {
-    fn name(&self) -> &str { "bash" }
+    fn name(&self) -> &str {
+        "bash"
+    }
 
     fn description(&self) -> &str {
         "Execute a bash command. Use for git, npm, docker, system commands. \
@@ -63,7 +65,8 @@ impl Tool for BashTool {
             None => return ToolResult::error("Missing required parameter: command"),
         };
 
-        let timeout_secs = args["timeout"].as_u64()
+        let timeout_secs = args["timeout"]
+            .as_u64()
             .unwrap_or(self.default_timeout_secs)
             .min(600);
 
@@ -79,11 +82,15 @@ impl Tool for BashTool {
                 .arg("-c")
                 .arg(command)
                 .current_dir(&self.workspace_root)
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return ToolResult::error(format!("Failed to execute: {}", e)),
-            Err(_) => return ToolResult::error(format!("Command timed out after {}s", timeout_secs)),
+            Err(_) => {
+                return ToolResult::error(format!("Command timed out after {}s", timeout_secs))
+            }
         };
 
         format_output(&output)
@@ -92,17 +99,14 @@ impl Tool for BashTool {
     /// Cancellable execution: spawns the process with kill_on_drop(true) and
     /// races against the CancellationToken. On cancellation, the child process
     /// is killed immediately.
-    async fn execute_cancellable(
-        &self,
-        args: Value,
-        cancel: CancellationToken,
-    ) -> ToolResult {
+    async fn execute_cancellable(&self, args: Value, cancel: CancellationToken) -> ToolResult {
         let command = match args["command"].as_str() {
             Some(c) => c,
             None => return ToolResult::error("Missing required parameter: command"),
         };
 
-        let timeout_secs = args["timeout"].as_u64()
+        let timeout_secs = args["timeout"]
+            .as_u64()
             .unwrap_or(self.default_timeout_secs)
             .min(600);
 
@@ -187,7 +191,8 @@ fn format_output(output: &std::process::Output) -> ToolResult {
             format!("{}\n{}", stdout.trim(), stderr.trim())
         }
     } else {
-        format!("Exit code: {}\n{}\n{}",
+        format!(
+            "Exit code: {}\n{}\n{}",
             output.status.code().unwrap_or(-1),
             stdout.trim(),
             stderr.trim()

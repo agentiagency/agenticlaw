@@ -12,7 +12,9 @@ use super::types::*;
 /// Check if the frontier summary has keyword overlap with the card description.
 /// Simple bag-of-words: if any significant word from the card appears in the frontier, it overlaps.
 fn frontier_overlaps(card: &str, frontier: &str) -> bool {
-    let stop_words = ["the", "a", "an", "is", "in", "on", "to", "for", "of", "and", "or", "with"];
+    let stop_words = [
+        "the", "a", "an", "is", "in", "on", "to", "for", "of", "and", "or", "with",
+    ];
     let frontier_lower = frontier.to_lowercase();
     card.to_lowercase()
         .split_whitespace()
@@ -30,12 +32,15 @@ pub async fn run_supervisor(config: SupervisorConfig) {
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<ConductorCommand>(32);
     tokio::spawn(conductor::listen_stdin(cmd_tx));
 
-    log::info("supervisor_started", serde_json::json!({
-        "molts_base": config.molts_base,
-        "poll_base_ms": config.backoff.base_ms,
-        "poll_max_ms": config.backoff.max_ms,
-        "dry_run": config.dry_run,
-    }));
+    log::info(
+        "supervisor_started",
+        serde_json::json!({
+            "molts_base": config.molts_base,
+            "poll_base_ms": config.backoff.base_ms,
+            "poll_max_ms": config.backoff.max_ms,
+            "dry_run": config.dry_run,
+        }),
+    );
 
     loop {
         // Process any pending conductor commands (non-blocking)
@@ -137,9 +142,8 @@ pub async fn run_supervisor(config: SupervisorConfig) {
         }
 
         // Remove sessions that no longer exist
-        sv.sessions.retain(|name, s| {
-            worker_sessions.contains(name) || s.status == SessionStatus::Dead
-        });
+        sv.sessions
+            .retain(|name, s| worker_sessions.contains(name) || s.status == SessionStatus::Dead);
 
         // Write state
         sv.last_poll_at = Some(Utc::now());
@@ -155,12 +159,15 @@ pub async fn run_supervisor(config: SupervisorConfig) {
             }
             m
         };
-        log::info("poll_cycle", serde_json::json!({
-            "sessions": sv.sessions.len(),
-            "backoff_ms": sv.current_backoff_ms,
-            "any_change": any_change,
-            "statuses": status_counts,
-        }));
+        log::info(
+            "poll_cycle",
+            serde_json::json!({
+                "sessions": sv.sessions.len(),
+                "backoff_ms": sv.current_backoff_ms,
+                "any_change": any_change,
+                "statuses": status_counts,
+            }),
+        );
 
         // Optional: emit full status on stdout for conductor piping
         if config.json_stdout {
@@ -185,9 +192,9 @@ pub async fn run_supervisor(config: SupervisorConfig) {
         if any_change {
             sv.current_backoff_ms = config.backoff.base_ms;
         } else {
-            sv.current_backoff_ms =
-                ((sv.current_backoff_ms as f64 * config.backoff.multiplier) as u64)
-                    .min(config.backoff.max_ms);
+            sv.current_backoff_ms = ((sv.current_backoff_ms as f64 * config.backoff.multiplier)
+                as u64)
+                .min(config.backoff.max_ms);
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(sv.current_backoff_ms)).await;
@@ -205,18 +212,23 @@ async fn handle_conductor_cmd(
             card,
             briefing,
         } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "spawn_worker", "name": name}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "spawn_worker", "name": name}),
+            );
             if let Some(c) = card {
                 sv.card_map.insert(name.clone(), c.clone());
                 let _ = state::write_card_map(&config.molts_base, &sv.card_map).await;
             }
             if !config.dry_run {
-                let _ =
-                    lifecycle::spawn_worker(name, card.as_deref(), briefing.as_deref()).await;
+                let _ = lifecycle::spawn_worker(name, card.as_deref(), briefing.as_deref()).await;
             }
         }
         ConductorCommand::KillWorker { name } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "kill_worker", "name": name}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "kill_worker", "name": name}),
+            );
             if !config.dry_run {
                 let _ = lifecycle::harvest_worker(name, &config.molts_base).await;
                 let _ = tmux::kill_session(name).await;
@@ -240,7 +252,10 @@ async fn handle_conductor_cmd(
             println!("{}", serde_json::to_string(&report).unwrap_or_default());
         }
         ConductorCommand::SendToWorker { name, keys } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "send_to_worker", "name": name}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "send_to_worker", "name": name}),
+            );
             if !config.dry_run {
                 let _ = tmux::send_keys(name, keys).await;
             }
@@ -250,7 +265,10 @@ async fn handle_conductor_cmd(
             card,
             briefing,
         } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "reassign_card", "name": name, "card": card}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "reassign_card", "name": name, "card": card}),
+            );
             sv.card_map.insert(name.clone(), card.clone());
             let _ = state::write_card_map(&config.molts_base, &sv.card_map).await;
             if let Some(s) = sv.sessions.get_mut(name) {
@@ -264,28 +282,30 @@ async fn handle_conductor_cmd(
             }
         }
         ConductorCommand::RotateWorker { name, briefing } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "rotate_worker", "name": name}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "rotate_worker", "name": name}),
+            );
             if !config.dry_run {
                 // Harvest current state
                 let _ = lifecycle::harvest_worker(name, &config.molts_base).await;
                 // Kill and respawn
                 let _ = tmux::kill_session(name).await;
                 let card = sv.card_map.get(name).cloned();
-                let _ = lifecycle::spawn_worker(
-                    name,
-                    card.as_deref(),
-                    briefing.as_deref(),
-                )
-                .await;
+                let _ = lifecycle::spawn_worker(name, card.as_deref(), briefing.as_deref()).await;
             }
             // Reset state
-            sv.sessions.insert(name.clone(), SessionState::new(name.clone()));
+            sv.sessions
+                .insert(name.clone(), SessionState::new(name.clone()));
             if let Some(card) = sv.card_map.get(name).cloned() {
                 sv.sessions.get_mut(name).unwrap().card = Some(card);
             }
         }
         ConductorCommand::ContextReset { name, briefing } => {
-            log::info("conductor_cmd", serde_json::json!({"cmd": "context_reset", "name": name}));
+            log::info(
+                "conductor_cmd",
+                serde_json::json!({"cmd": "context_reset", "name": name}),
+            );
             if !config.dry_run {
                 // Send /clear to claude, then re-brief
                 let _ = tmux::send_keys(name, "/clear").await;
@@ -314,12 +334,18 @@ mod tests {
 
     #[test]
     fn frontier_overlaps_matching() {
-        assert!(frontier_overlaps("implement authentication", "working on auth implementation"));
+        assert!(frontier_overlaps(
+            "implement authentication",
+            "working on auth implementation"
+        ));
     }
 
     #[test]
     fn frontier_overlaps_no_match() {
-        assert!(!frontier_overlaps("implement authentication", "refactoring database schema"));
+        assert!(!frontier_overlaps(
+            "implement authentication",
+            "refactoring database schema"
+        ));
     }
 
     #[test]
@@ -330,15 +356,23 @@ mod tests {
 
     #[test]
     fn frontier_overlaps_case_insensitive() {
-        assert!(frontier_overlaps("Deploy Terraform", "running terraform plan"));
+        assert!(frontier_overlaps(
+            "Deploy Terraform",
+            "running terraform plan"
+        ));
     }
 
     #[test]
     fn conductor_parse_spawn() {
-        let json = r#"{"cmd":"spawn_worker","name":"ws2-1","card":"auth","briefing":"implement login"}"#;
+        let json =
+            r#"{"cmd":"spawn_worker","name":"ws2-1","card":"auth","briefing":"implement login"}"#;
         let cmd: ConductorCommand = serde_json::from_str(json).unwrap();
         match cmd {
-            ConductorCommand::SpawnWorker { name, card, briefing } => {
+            ConductorCommand::SpawnWorker {
+                name,
+                card,
+                briefing,
+            } => {
                 assert_eq!(name, "ws2-1");
                 assert_eq!(card.unwrap(), "auth");
                 assert_eq!(briefing.unwrap(), "implement login");

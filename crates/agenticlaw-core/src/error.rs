@@ -42,7 +42,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn auth_failed(reason: impl Into<String>) -> Self {
-        Self::AuthFailed { reason: reason.into() }
+        Self::AuthFailed {
+            reason: reason.into(),
+        }
     }
 
     pub fn llm_error(provider: impl Into<String>, message: impl Into<String>) -> Self {

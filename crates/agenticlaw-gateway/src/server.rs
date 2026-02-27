@@ -2,15 +2,15 @@
 
 use crate::auth::ResolvedAuth;
 use crate::ws::{handle_connection, WsState};
+use agenticlaw_agent::{AgentConfig, AgentRuntime, OutputEvent, SessionKey};
+use agenticlaw_core::GatewayConfig;
+use agenticlaw_tools::create_default_registry;
 use axum::{
     extract::{Path as AxumPath, State, WebSocketUpgrade},
     response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
 };
-use agenticlaw_agent::{AgentConfig, AgentRuntime, OutputEvent, SessionKey};
-use agenticlaw_core::GatewayConfig;
-use agenticlaw_tools::create_default_registry;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,16 +37,19 @@ impl Default for ExtendedConfig {
 }
 
 pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
-    let env_token = std::env::var("AGENTICLAW_GATEWAY_TOKEN").or_else(|_| std::env::var("RUSTCLAW_GATEWAY_TOKEN"))
+    let env_token = std::env::var("AGENTICLAW_GATEWAY_TOKEN")
+        .or_else(|_| std::env::var("RUSTCLAW_GATEWAY_TOKEN"))
         .or_else(|_| std::env::var("OPENCLAW_GATEWAY_TOKEN"))
         .ok();
     let auth = ResolvedAuth::from_config(&config.gateway.auth, env_token);
 
-    let api_key = config.anthropic_api_key
+    let api_key = config
+        .anthropic_api_key
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
         .ok_or_else(|| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
 
-    let layer = std::env::var("AGENTICLAW_LAYER").or_else(|_| std::env::var("RUSTCLAW_LAYER"))
+    let layer = std::env::var("AGENTICLAW_LAYER")
+        .or_else(|_| std::env::var("RUSTCLAW_LAYER"))
         .or_else(|_| std::env::var("OPENCLAW_LAYER"))
         .ok();
 
@@ -54,11 +57,16 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
     info!("Registered tools: {:?}", tools.list());
 
     let agent_config = AgentConfig {
-        default_model: std::env::var("AGENTICLAW_MODEL").or_else(|_| std::env::var("RUSTCLAW_MODEL"))
+        default_model: std::env::var("AGENTICLAW_MODEL")
+            .or_else(|_| std::env::var("RUSTCLAW_MODEL"))
             .or_else(|_| std::env::var("OPENCLAW_MODEL"))
             .unwrap_or_else(|_| "claude-opus-4-6-20250929".to_string()),
         max_tool_iterations: 25,
-        system_prompt: config.system_prompt.or_else(|| std::env::var("AGENTICLAW_SYSTEM_PROMPT").or_else(|_| std::env::var("RUSTCLAW_SYSTEM_PROMPT")).ok()),
+        system_prompt: config.system_prompt.or_else(|| {
+            std::env::var("AGENTICLAW_SYSTEM_PROMPT")
+                .or_else(|_| std::env::var("RUSTCLAW_SYSTEM_PROMPT"))
+                .ok()
+        }),
         workspace_root: config.workspace_root.clone(),
         sleep_threshold_pct: 1.0,
     };
@@ -68,7 +76,11 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         let provider = agenticlaw_llm::AnthropicProvider::new(&api_key)
             .with_base_url(format!("{}/v1/messages", api_url));
         info!("Using custom API URL: {}/v1/messages", api_url);
-        Arc::new(AgentRuntime::with_provider(Arc::new(provider), tools, agent_config))
+        Arc::new(AgentRuntime::with_provider(
+            Arc::new(provider),
+            tools,
+            agent_config,
+        ))
     } else {
         Arc::new(AgentRuntime::new(&api_key, tools, agent_config))
     };
@@ -98,9 +110,10 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
         .with_state(state);
 
-    let bind_addr: SocketAddr = format!("{}:{}", config.gateway.bind.to_addr(), config.gateway.port)
-        .parse()
-        .expect("invalid bind address");
+    let bind_addr: SocketAddr =
+        format!("{}:{}", config.gateway.bind.to_addr(), config.gateway.port)
+            .parse()
+            .expect("invalid bind address");
 
     info!("Agenticlaw Gateway v{} starting", env!("CARGO_PKG_VERSION"));
     info!("  Listening on: {}", bind_addr);
@@ -108,7 +121,9 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
     info!("  Context:   http://{}/ctx/{{session}}", bind_addr);
     info!("  Auth mode: {:?}", config.gateway.auth.mode);
     info!("  Workspace: {:?}", config.workspace_root);
-    if let Some(layer) = &layer { info!("  Layer: {}", layer); }
+    if let Some(layer) = &layer {
+        info!("  Layer: {}", layer);
+    }
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     axum::serve(listener, app).await?;
@@ -133,7 +148,10 @@ async fn health_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse 
 
 /// GET /surface — consciousness surface state (bee protocol: sacred endpoint)
 async fn surface_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let sessions: Vec<String> = state.agent.sessions().list()
+    let sessions: Vec<String> = state
+        .agent
+        .sessions()
+        .list()
         .into_iter()
         .map(|k| k.as_str().to_string())
         .collect();
@@ -164,7 +182,7 @@ async fn plan_handler(
 
 /// POST /test — run self-test (bee protocol: sacred endpoint)
 async fn test_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let healthy = state.agent.sessions().list().len() >= 0; // always true; real checks later
+    let healthy = true; // always true; real checks later
     Json(serde_json::json!({
         "status": if healthy { "pass" } else { "fail" },
         "version": env!("CARGO_PKG_VERSION"),
@@ -175,7 +193,9 @@ async fn test_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
 
 /// GET /hints — capability hints for the swarm (bee protocol: sacred endpoint)
 async fn hints_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let tool_names: Vec<String> = state.agent.tool_definitions()
+    let tool_names: Vec<String> = state
+        .agent
+        .tool_definitions()
         .into_iter()
         .map(|t| t.name)
         .collect();
@@ -212,28 +232,46 @@ async fn ctx_handler(
     match state.agent.sessions().get(&session_key) {
         Some(sess) => match sess.read_ctx() {
             Some(content) => (
-                [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                [(
+                    axum::http::header::CONTENT_TYPE,
+                    "text/plain; charset=utf-8",
+                )],
                 content,
-            ).into_response(),
+            )
+                .into_response(),
             None => (
                 axum::http::StatusCode::NOT_FOUND,
                 "Session exists but no .ctx file found",
-            ).into_response(),
+            )
+                .into_response(),
         },
         None => (
             axum::http::StatusCode::NOT_FOUND,
             format!("Session '{}' not found", session),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
 async fn index_handler(State(state): State<Arc<WsState>>) -> Html<String> {
-    let tools: Vec<String> = state.agent.tool_definitions().into_iter().map(|t| t.name).collect();
-    let sessions: Vec<String> = state.agent.sessions().list().into_iter().map(|k| k.as_str().to_string()).collect();
+    let tools: Vec<String> = state
+        .agent
+        .tool_definitions()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    let sessions: Vec<String> = state
+        .agent
+        .sessions()
+        .list()
+        .into_iter()
+        .map(|k| k.as_str().to_string())
+        .collect();
     let session_links = if sessions.is_empty() {
         "<em>No active sessions. Send a chat message to create one.</em>".to_string()
     } else {
-        sessions.iter()
+        sessions
+            .iter()
             .map(|s| format!("<li><a href=\"/ctx/{}\">{}</a></li>", s, s))
             .collect::<Vec<_>>()
             .join("\n")

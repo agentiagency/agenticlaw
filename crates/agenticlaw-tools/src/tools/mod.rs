@@ -7,9 +7,9 @@
 //! 4. Register it in create_default_registry() in ../lib.rs
 
 pub mod bash;
-pub mod read;
-pub mod write;
 pub mod edit;
 pub mod glob;
 pub mod grep;
+pub mod read;
 pub mod spawn;
+pub mod write;

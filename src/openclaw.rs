@@ -27,25 +27,37 @@ impl OpenclawSession {
         let events = transform::transform(result.records);
 
         // Extract header info from events
-        let (version, id, timestamp, cwd) = events.iter().find_map(|e| {
-            if let SessionEvent::Header { version, id, timestamp, cwd } = e {
-                Some((*version, id.clone(), timestamp.clone(), cwd.clone()))
-            } else {
-                None
-            }
-        }).unwrap_or_default();
+        let (version, id, timestamp, cwd) = events
+            .iter()
+            .find_map(|e| {
+                if let SessionEvent::Header {
+                    version,
+                    id,
+                    timestamp,
+                    cwd,
+                } = e
+                {
+                    Some((*version, id.clone(), timestamp.clone(), cwd.clone()))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
 
         let mut parse_errors = result.errors;
 
         if version > MAX_SUPPORTED_VERSION {
-            parse_errors.insert(0, ParseError {
-                line: 1,
-                message: format!(
-                    "JSONL format version {} is newer than supported version {}. \
+            parse_errors.insert(
+                0,
+                ParseError {
+                    line: 1,
+                    message: format!(
+                        "JSONL format version {} is newer than supported version {}. \
                      Output may be incomplete. Upgrade agenticlaw to parse this file correctly.",
-                    version, MAX_SUPPORTED_VERSION
-                ),
-            });
+                        version, MAX_SUPPORTED_VERSION
+                    ),
+                },
+            );
         }
 
         OpenclawSession {

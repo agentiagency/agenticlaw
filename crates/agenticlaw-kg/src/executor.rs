@@ -89,26 +89,45 @@ impl Executor {
         }
     }
 
-    pub fn with_registry(runtime: Arc<AgentRuntime>, driver: Arc<dyn ResourceDriver>, registry: NodeTypeRegistry) -> Self {
-        Self { runtime, driver, registry }
+    pub fn with_registry(
+        runtime: Arc<AgentRuntime>,
+        driver: Arc<dyn ResourceDriver>,
+        registry: NodeTypeRegistry,
+    ) -> Self {
+        Self {
+            runtime,
+            driver,
+            registry,
+        }
     }
 
     /// Execute a full issue run using the node type registry.
     /// Recursively descends: issue → analysis/impl/pr → leaves.
     pub async fn run_issue(&self, config: RunConfig) -> Result<RunManifest> {
         let run_id = format!("{}-{}", config.issue, Utc::now().format("%Y%m%dT%H%M%S"));
-        let graph_root = GraphAddress::root().child("issue").child(&config.issue.to_string());
+        let graph_root = GraphAddress::root()
+            .child("issue")
+            .child(&config.issue.to_string());
 
         // Build template variables from config
         let mut vars = TemplateVars {
             issue: config.issue.to_string(),
-            repo: config.target.split('/').take(2).collect::<Vec<_>>().join("/"),
+            repo: config
+                .target
+                .split('/')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("/"),
             context: config.context_summary.clone(),
             ..Default::default()
         };
         // Try to extract repo from target (github.com/owner/repo/issues/N → owner/repo)
         if config.target.contains("github.com/") {
-            let parts: Vec<&str> = config.target.trim_start_matches("github.com/").split('/').collect();
+            let parts: Vec<&str> = config
+                .target
+                .trim_start_matches("github.com/")
+                .split('/')
+                .collect();
             if parts.len() >= 2 {
                 vars.repo = format!("{}/{}", parts[0], parts[1]);
             }
@@ -127,25 +146,33 @@ impl Executor {
         self.write_manifest(&run_id, &manifest).await?;
 
         // Write root context
-        self.driver.write_artifact(
-            &run_id,
-            &GraphAddress::root(),
-            Artifact::Context,
-            config.context_summary.as_bytes(),
-        ).await?;
+        self.driver
+            .write_artifact(
+                &run_id,
+                &GraphAddress::root(),
+                Artifact::Context,
+                config.context_summary.as_bytes(),
+            )
+            .await?;
 
         // --- RECURSIVE DESCENT ---
-        let result = self.execute_node(
-            &run_id,
-            "issue",
-            &graph_root,
-            &config.system_prompt,
-            &vars,
-            &mut manifest,
-        ).await?;
+        let result = self
+            .execute_node(
+                &run_id,
+                "issue",
+                &graph_root,
+                &config.system_prompt,
+                &vars,
+                &mut manifest,
+            )
+            .await?;
 
         // Finalize
-        let outcome = if result.success { Outcome::Success } else { Outcome::Failure };
+        let outcome = if result.success {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        };
         manifest.finalize(outcome);
         self.write_manifest(&run_id, &manifest).await?;
 
@@ -190,21 +217,33 @@ impl Executor {
         manifest: &'a mut RunManifest,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<NodeResult>> + Send + 'a>> {
         Box::pin(async move {
-        let node_type = self.registry.get(node_type_id)
-            .ok_or_else(|| anyhow::anyhow!("node type '{}' not found in registry", node_type_id))?
-            .clone(); // Clone to avoid borrow issues
+            let node_type = self
+                .registry
+                .get(node_type_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("node type '{}' not found in registry", node_type_id)
+                })?
+                .clone(); // Clone to avoid borrow issues
 
-        info!(run_id, node = node_type_id, addr = addr.as_str(), leaf = node_type.is_leaf, "executing node");
+            info!(
+                run_id,
+                node = node_type_id,
+                addr = addr.as_str(),
+                leaf = node_type.is_leaf,
+                "executing node"
+            );
 
-        // Mark as running
-        manifest.start_node(addr.as_str(), None);
-        self.write_manifest(run_id, manifest).await?;
+            // Mark as running
+            manifest.start_node(addr.as_str(), None);
+            self.write_manifest(run_id, manifest).await?;
 
-        if node_type.is_leaf {
-            self.execute_leaf(run_id, &node_type, addr, system_prompt, vars, manifest).await
-        } else {
-            self.execute_parent(run_id, &node_type, addr, system_prompt, vars, manifest).await
-        }
+            if node_type.is_leaf {
+                self.execute_leaf(run_id, &node_type, addr, system_prompt, vars, manifest)
+                    .await
+            } else {
+                self.execute_parent(run_id, &node_type, addr, system_prompt, vars, manifest)
+                    .await
+            }
         }) // close Box::pin
     }
 
@@ -224,20 +263,36 @@ impl Executor {
         let node_fear = crate::registry::render_template_pub(&node_type.fear_template, vars);
         let prompt = crate::registry::render_template_pub(&node_type.prompt_template, vars);
         // ROOT FEAR is inherited by every node — prepended, non-negotiable
-        let fear = format!("{}\n\n---\n\n{}", crate::registry::AGENTIMOLT_ROOT_FEAR, node_fear);
+        let fear = format!(
+            "{}\n\n---\n\n{}",
+            crate::registry::AGENTIMOLT_ROOT_FEAR,
+            node_fear
+        );
         let ego = vars.parent_output.clone(); // EGO = what the parent prepared
 
         // Write the directory — this IS the agent's brain at spawn time
-        self.driver.write_artifact(run_id, addr, Artifact::Prompt, prompt.as_bytes()).await?;
-        self.driver.write_artifact(run_id, addr, Artifact::Ego, ego.as_bytes()).await?;
-        self.driver.write_artifact(run_id, addr, Artifact::Fear, fear.as_bytes()).await?;
+        self.driver
+            .write_artifact(run_id, addr, Artifact::Prompt, prompt.as_bytes())
+            .await?;
+        self.driver
+            .write_artifact(run_id, addr, Artifact::Ego, ego.as_bytes())
+            .await?;
+        self.driver
+            .write_artifact(run_id, addr, Artifact::Fear, fear.as_bytes())
+            .await?;
 
-        self.emit_event(run_id, addr, "leaf_spawned", serde_json::json!({
-            "node_type": node_type.id,
-            "purpose": purpose,
-            "role": node_type.role.to_string(),
-            "max_tool_calls": node_type.max_tool_calls,
-        })).await?;
+        self.emit_event(
+            run_id,
+            addr,
+            "leaf_spawned",
+            serde_json::json!({
+                "node_type": node_type.id,
+                "purpose": purpose,
+                "role": node_type.role.to_string(),
+                "max_tool_calls": node_type.max_tool_calls,
+            }),
+        )
+        .await?;
 
         // ── System prompt = PURPOSE + FEAR + tool limit. Preloaded by code. ──
         let system = format!(
@@ -258,22 +313,34 @@ impl Executor {
         let result = self.run_agent(run_id, addr, &system, &user_msg).await?;
 
         // Write output (code captures it)
-        self.driver.write_artifact(run_id, addr, Artifact::Output, result.output.as_bytes()).await?;
+        self.driver
+            .write_artifact(run_id, addr, Artifact::Output, result.output.as_bytes())
+            .await?;
         self.write_metrics(run_id, addr, &result).await?;
 
         // Evaluate success criterion
         let success = result.success && self.evaluate_success(node_type, &result.output);
 
-        self.emit_event(run_id, addr, "leaf_complete", serde_json::json!({
-            "node_type": node_type.id,
-            "success": success,
-            "tokens": result.tokens,
-            "wall_ms": result.wall_ms,
-        })).await?;
+        self.emit_event(
+            run_id,
+            addr,
+            "leaf_complete",
+            serde_json::json!({
+                "node_type": node_type.id,
+                "success": success,
+                "tokens": result.tokens,
+                "wall_ms": result.wall_ms,
+            }),
+        )
+        .await?;
 
         manifest.finish_node(
             addr.as_str(),
-            if success { NodeState::Success } else { NodeState::Failed },
+            if success {
+                NodeState::Success
+            } else {
+                NodeState::Failed
+            },
             result.tokens,
         );
         self.write_manifest(run_id, manifest).await?;
@@ -297,13 +364,21 @@ impl Executor {
         vars: &TemplateVars,
         manifest: &mut RunManifest,
     ) -> Result<NodeResult> {
-        self.emit_event(run_id, addr, "parent_descending", serde_json::json!({
-            "node_type": node_type.id,
-            "children": node_type.children,
-        })).await?;
+        self.emit_event(
+            run_id,
+            addr,
+            "parent_descending",
+            serde_json::json!({
+                "node_type": node_type.id,
+                "children": node_type.children,
+            }),
+        )
+        .await?;
 
         // ── Pre-hook: parent gathers context for children (CODE, not agent) ──
-        let parent_context = self.gather_parent_context(run_id, node_type, addr, vars).await?;
+        let parent_context = self
+            .gather_parent_context(run_id, node_type, addr, vars)
+            .await?;
 
         let mut child_outputs: Vec<(String, String)> = Vec::new();
         // Seed with parent-gathered context so first child gets it
@@ -324,22 +399,30 @@ impl Executor {
             // Progressive context narrowing:
             // Each child gets the accumulated output of all previous siblings.
             let mut child_vars = vars.clone();
-            child_vars.parent_output = child_outputs.iter()
+            child_vars.parent_output = child_outputs
+                .iter()
                 .map(|(id, out)| format!("### {} output:\n{}", id, out))
                 .collect::<Vec<_>>()
                 .join("\n\n");
 
             // If we have a plan from synthesize-plan, put it in {plan}
-            if let Some((_, plan_text)) = child_outputs.iter().find(|(id, _)| id == "synthesize-plan") {
+            if let Some((_, plan_text)) =
+                child_outputs.iter().find(|(id, _)| id == "synthesize-plan")
+            {
                 child_vars.plan = plan_text.clone();
             }
 
             // If we have a branch name, extract it
-            if let Some((_, branch_text)) = child_outputs.iter().find(|(id, _)| id == "create-branch") {
+            if let Some((_, branch_text)) =
+                child_outputs.iter().find(|(id, _)| id == "create-branch")
+            {
                 // Try to extract branch name from output
                 for line in branch_text.lines() {
                     let trimmed = line.trim();
-                    if trimmed.starts_with("fix-") || trimmed.starts_with("feat-") || trimmed.starts_with("issue-") {
+                    if trimmed.starts_with("fix-")
+                        || trimmed.starts_with("feat-")
+                        || trimmed.starts_with("issue-")
+                    {
                         child_vars.branch = trimmed.to_string();
                         break;
                     }
@@ -352,14 +435,16 @@ impl Executor {
                 child_vars.branch = format!("fix-{}-auto", vars.issue);
             }
 
-            let child_result = self.execute_node(
-                run_id,
-                child_id,
-                &child_addr,
-                system_prompt,
-                &child_vars,
-                manifest,
-            ).await?;
+            let child_result = self
+                .execute_node(
+                    run_id,
+                    child_id,
+                    &child_addr,
+                    system_prompt,
+                    &child_vars,
+                    manifest,
+                )
+                .await?;
 
             child_outputs.push((child_id.clone(), child_result.output.clone()));
             total_tokens += child_result.tokens;
@@ -367,9 +452,17 @@ impl Executor {
 
             if !child_result.success {
                 all_success = false;
-                warn!(run_id, child = child_id, "child failed — stopping parent descent");
+                warn!(
+                    run_id,
+                    child = child_id,
+                    "child failed — stopping parent descent"
+                );
                 // Mark remaining children as blocked
-                let child_idx = node_type.children.iter().position(|c| c == child_id).unwrap_or(0);
+                let child_idx = node_type
+                    .children
+                    .iter()
+                    .position(|c| c == child_id)
+                    .unwrap_or(0);
                 for remaining in &node_type.children[child_idx + 1..] {
                     let remaining_addr = addr.child(remaining);
                     manifest.update_node(remaining_addr.as_str(), NodeState::Blocked);
@@ -379,24 +472,37 @@ impl Executor {
         }
 
         // Aggregate output
-        let aggregated = child_outputs.iter()
+        let aggregated = child_outputs
+            .iter()
             .map(|(id, out)| format!("## {}\n{}", id, out))
             .collect::<Vec<_>>()
             .join("\n\n---\n\n");
 
-        self.driver.write_artifact(run_id, addr, Artifact::Output, aggregated.as_bytes()).await?;
+        self.driver
+            .write_artifact(run_id, addr, Artifact::Output, aggregated.as_bytes())
+            .await?;
 
-        self.emit_event(run_id, addr, "parent_complete", serde_json::json!({
-            "node_type": node_type.id,
-            "success": all_success,
-            "children_completed": child_outputs.len(),
-            "children_total": node_type.children.len(),
-            "tokens": total_tokens,
-        })).await?;
+        self.emit_event(
+            run_id,
+            addr,
+            "parent_complete",
+            serde_json::json!({
+                "node_type": node_type.id,
+                "success": all_success,
+                "children_completed": child_outputs.len(),
+                "children_total": node_type.children.len(),
+                "tokens": total_tokens,
+            }),
+        )
+        .await?;
 
         manifest.finish_node(
             addr.as_str(),
-            if all_success { NodeState::Success } else { NodeState::Failed },
+            if all_success {
+                NodeState::Success
+            } else {
+                NodeState::Failed
+            },
             total_tokens,
         );
         self.write_manifest(run_id, manifest).await?;
@@ -429,17 +535,33 @@ impl Executor {
                 // Use the agent runtime to execute a single tool call deterministically
                 // For now: shell out directly (code, not agent)
                 let output = tokio::process::Command::new("gh")
-                    .args(["issue", "view", issue, "--repo", repo, "--json", "title,body,comments,labels,state"])
+                    .args([
+                        "issue",
+                        "view",
+                        issue,
+                        "--repo",
+                        repo,
+                        "--json",
+                        "title,body,comments,labels,state",
+                    ])
                     .output()
                     .await;
                 match output {
                     Ok(o) if o.status.success() => {
                         let text = String::from_utf8_lossy(&o.stdout).to_string();
-                        self.driver.write_artifact(run_id, addr, Artifact::Context, text.as_bytes()).await?;
-                        self.emit_event(run_id, addr, "context_gathered", serde_json::json!({
-                            "source": format!("gh issue view {}", issue),
-                            "bytes": text.len(),
-                        })).await?;
+                        self.driver
+                            .write_artifact(run_id, addr, Artifact::Context, text.as_bytes())
+                            .await?;
+                        self.emit_event(
+                            run_id,
+                            addr,
+                            "context_gathered",
+                            serde_json::json!({
+                                "source": format!("gh issue view {}", issue),
+                                "bytes": text.len(),
+                            }),
+                        )
+                        .await?;
                         Ok(text)
                     }
                     Ok(o) => {
@@ -494,7 +616,15 @@ impl Executor {
             let headers: Vec<String> = criterion
                 .split("##")
                 .skip(1)
-                .map(|s| format!("## {}", s.split(|c: char| c == ',' || c == '.' || c == ' ').next().unwrap_or("").trim()))
+                .map(|s| {
+                    format!(
+                        "## {}",
+                        s.split(|c: char| c == ',' || c == '.' || c == ' ')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                    )
+                })
                 .filter(|s| s.len() > 3)
                 .collect();
 
@@ -522,7 +652,10 @@ impl Executor {
 
         // Set system prompt on session
         {
-            let session = self.runtime.sessions().get_or_create(&session_key, Some(system_prompt));
+            let session = self
+                .runtime
+                .sessions()
+                .get_or_create(&session_key, Some(system_prompt));
             session.set_system_prompt(system_prompt).await;
         }
 
@@ -530,9 +663,7 @@ impl Executor {
         let sk = session_key.clone();
         let prompt = user_prompt.to_string();
 
-        let handle = tokio::spawn(async move {
-            runtime.run_turn(&sk, &prompt, tx).await
-        });
+        let handle = tokio::spawn(async move { runtime.run_turn(&sk, &prompt, tx).await });
 
         // Collect output + emit events
         let mut output = String::new();
@@ -548,20 +679,30 @@ impl Executor {
                     token_estimate += t.len() / 4;
                 }
                 AgentEvent::ToolExecuting { name, .. } => {
-                    let _ = driver.emit_event(&run_id_owned, KgEvent {
-                        ts: Utc::now(),
-                        graph_address: addr_clone.as_str().into(),
-                        event: "tool_call".into(),
-                        data: serde_json::json!({"tool": name}),
-                    }).await;
+                    let _ = driver
+                        .emit_event(
+                            &run_id_owned,
+                            KgEvent {
+                                ts: Utc::now(),
+                                graph_address: addr_clone.as_str().into(),
+                                event: "tool_call".into(),
+                                data: serde_json::json!({"tool": name}),
+                            },
+                        )
+                        .await;
                 }
                 AgentEvent::ToolResult { name, is_error, .. } => {
-                    let _ = driver.emit_event(&run_id_owned, KgEvent {
-                        ts: Utc::now(),
-                        graph_address: addr_clone.as_str().into(),
-                        event: "tool_result".into(),
-                        data: serde_json::json!({"tool": name, "success": !is_error}),
-                    }).await;
+                    let _ = driver
+                        .emit_event(
+                            &run_id_owned,
+                            KgEvent {
+                                ts: Utc::now(),
+                                graph_address: addr_clone.as_str().into(),
+                                event: "tool_result".into(),
+                                data: serde_json::json!({"tool": name, "success": !is_error}),
+                            },
+                        )
+                        .await;
                 }
                 AgentEvent::Error(e) => {
                     warn!(run_id = run_id_owned, error = %e, "agent error");
@@ -609,47 +750,67 @@ impl Executor {
 
         report.push_str(&format!(
             "\n## Totals\n- Tokens: {}\n- Wall: {}ms\n- Nodes: {}\n",
-            manifest.total_tokens, manifest.total_wall_ms, manifest.nodes.len(),
+            manifest.total_tokens,
+            manifest.total_wall_ms,
+            manifest.nodes.len(),
         ));
 
         report
     }
 
     async fn write_manifest(&self, run_id: &str, manifest: &RunManifest) -> Result<()> {
-        self.driver.write_artifact(
-            run_id,
-            &GraphAddress::root(),
-            Artifact::Manifest,
-            manifest.to_yaml().as_bytes(),
-        ).await
+        self.driver
+            .write_artifact(
+                run_id,
+                &GraphAddress::root(),
+                Artifact::Manifest,
+                manifest.to_yaml().as_bytes(),
+            )
+            .await
     }
 
-    async fn write_metrics(&self, run_id: &str, addr: &GraphAddress, result: &NodeResult) -> Result<()> {
-        self.driver.write_artifact(
-            run_id,
-            addr,
-            Artifact::Metrics,
-            serde_yaml::to_string(&serde_json::json!({
-                "tokens": result.tokens,
-                "wall_ms": result.wall_ms,
-                "outcome": if result.success { "success" } else { "failed" },
-            }))?.as_bytes(),
-        ).await
+    async fn write_metrics(
+        &self,
+        run_id: &str,
+        addr: &GraphAddress,
+        result: &NodeResult,
+    ) -> Result<()> {
+        self.driver
+            .write_artifact(
+                run_id,
+                addr,
+                Artifact::Metrics,
+                serde_yaml::to_string(&serde_json::json!({
+                    "tokens": result.tokens,
+                    "wall_ms": result.wall_ms,
+                    "outcome": if result.success { "success" } else { "failed" },
+                }))?
+                .as_bytes(),
+            )
+            .await
     }
 
     async fn write_report(&self, run_id: &str, manifest: &RunManifest, report: &str) -> Result<()> {
-        self.driver.write_artifact(
-            run_id,
-            &GraphAddress::root(),
-            Artifact::Report,
-            report.as_bytes(),
-        ).await?;
-        let _ = self.driver.emit_event(run_id, KgEvent {
-            ts: Utc::now(),
-            graph_address: "/run-log".into(),
-            event: "run_complete".into(),
-            data: serde_json::json!({"line": manifest.run_log_line().trim()}),
-        }).await;
+        self.driver
+            .write_artifact(
+                run_id,
+                &GraphAddress::root(),
+                Artifact::Report,
+                report.as_bytes(),
+            )
+            .await?;
+        let _ = self
+            .driver
+            .emit_event(
+                run_id,
+                KgEvent {
+                    ts: Utc::now(),
+                    graph_address: "/run-log".into(),
+                    event: "run_complete".into(),
+                    data: serde_json::json!({"line": manifest.run_log_line().trim()}),
+                },
+            )
+            .await;
         Ok(())
     }
 
@@ -660,11 +821,16 @@ impl Executor {
         event_name: &str,
         data: serde_json::Value,
     ) -> Result<()> {
-        self.driver.emit_event(run_id, KgEvent {
-            ts: Utc::now(),
-            graph_address: addr.as_str().into(),
-            event: event_name.into(),
-            data,
-        }).await
+        self.driver
+            .emit_event(
+                run_id,
+                KgEvent {
+                    ts: Utc::now(),
+                    graph_address: addr.as_str().into(),
+                    event: event_name.into(),
+                    data,
+                },
+            )
+            .await
     }
 }

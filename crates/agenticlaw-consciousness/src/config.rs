@@ -153,7 +153,14 @@ impl Default for ConsciousnessConfig {
 
 impl Default for PortConfig {
     fn default() -> Self {
-        Self { l0: 18789, l1: 18791, l2: 18792, l3: 18793, core_a: 18794, core_b: 18795 }
+        Self {
+            l0: 18789,
+            l1: 18791,
+            l2: 18792,
+            l3: 18793,
+            core_a: 18794,
+            core_b: 18795,
+        }
     }
 }
 
@@ -207,19 +214,30 @@ impl Default for EgoConfig {
 
 impl Default for CascadeConfig {
     fn default() -> Self {
-        Self { delta_max_chars: 4_000, max_tool_iterations: 3, watcher_poll_ms: 500, gateway_settle_secs: 2 }
+        Self {
+            delta_max_chars: 4_000,
+            max_tool_iterations: 3,
+            watcher_poll_ms: 500,
+            gateway_settle_secs: 2,
+        }
     }
 }
 
 impl Default for CoreConfig {
     fn default() -> Self {
-        Self { budget_tokens: 200_000, max_tool_iterations: 3 }
+        Self {
+            budget_tokens: 200_000,
+            max_tool_iterations: 3,
+        }
     }
 }
 
 impl Default for InjectionConfig {
     fn default() -> Self {
-        Self { correlation_threshold: 0.1, l0_tail_chars: 2_000 }
+        Self {
+            correlation_threshold: 0.1,
+            l0_tail_chars: 2_000,
+        }
     }
 }
 
@@ -268,7 +286,12 @@ impl ConsciousnessConfig {
 
     /// Layer models as array [L0, L1, L2, L3].
     pub fn layer_model_names(&self) -> [String; 4] {
-        [self.models.l0.clone(), self.models.l1.clone(), self.models.l2.clone(), self.models.l3.clone()]
+        [
+            self.models.l0.clone(),
+            self.models.l1.clone(),
+            self.models.l2.clone(),
+            self.models.l3.clone(),
+        ]
     }
 }
 

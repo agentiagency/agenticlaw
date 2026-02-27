@@ -1,6 +1,11 @@
 use super::types::{FailureMode, SessionSnapshot, SessionState};
 
-pub fn detect_frozen(state: &SessionState, snapshot: &SessionSnapshot, interval_ms: u64, threshold_secs: u64) -> Option<FailureMode> {
+pub fn detect_frozen(
+    state: &SessionState,
+    snapshot: &SessionSnapshot,
+    interval_ms: u64,
+    threshold_secs: u64,
+) -> Option<FailureMode> {
     if !snapshot.exists {
         return None;
     }
@@ -82,7 +87,10 @@ pub fn detect_infinite_loop(state: &SessionState) -> Option<FailureMode> {
 /// Detects rabbit-holing: session is active but working off-frontier for multiple cycles.
 /// The poll loop tracks `cycles_off_frontier` by comparing frontier summaries across cycles.
 /// If the worker has been off-frontier for >2 cycles, flag it.
-pub fn detect_rabbit_holing(state: &SessionState, _snapshot: &SessionSnapshot) -> Option<FailureMode> {
+pub fn detect_rabbit_holing(
+    state: &SessionState,
+    _snapshot: &SessionSnapshot,
+) -> Option<FailureMode> {
     if state.cycles_off_frontier > 2 {
         Some(FailureMode::RabbitHoling {
             session: state.name.clone(),
@@ -96,7 +104,10 @@ pub fn detect_rabbit_holing(state: &SessionState, _snapshot: &SessionSnapshot) -
 /// Detects silent stall: session exists, pane shows a prompt, but nothing is happening.
 /// Different from frozen: frozen means pane content is unchanged. Silent stall means
 /// the worker is at a prompt (waiting for input) rather than executing.
-pub fn detect_silent_stall(state: &SessionState, snapshot: &SessionSnapshot) -> Option<FailureMode> {
+pub fn detect_silent_stall(
+    state: &SessionState,
+    snapshot: &SessionSnapshot,
+) -> Option<FailureMode> {
     if !snapshot.exists {
         return None;
     }
@@ -215,7 +226,11 @@ mod tests {
     #[test]
     fn deranged_not_detected_varied_commands() {
         let mut state = make_state("w1", 0);
-        state.recent_commands = vec!["cargo build".into(), "cargo test".into(), "cargo run".into()];
+        state.recent_commands = vec![
+            "cargo build".into(),
+            "cargo test".into(),
+            "cargo run".into(),
+        ];
         let snap = make_snapshot("w1", true, "");
         assert!(detect_deranged(&state, &snap).is_none());
     }

@@ -64,7 +64,12 @@ impl CtxWatcher {
                 let path = entry.path();
                 if path.extension().is_some_and(|e| e == "ctx") && !self.sizes.contains_key(&path) {
                     let current_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                    info!("New .ctx file detected for L{}: {} ({} bytes)", layer, path.display(), current_size);
+                    info!(
+                        "New .ctx file detected for L{}: {} ({} bytes)",
+                        layer,
+                        path.display(),
+                        current_size
+                    );
                     // Start watching from current size (don't replay history) unless it's tiny
                     // For new files under 8KB, watch from 0 to catch the initial content
                     let start_from = if current_size < 8192 { 0 } else { current_size };
@@ -113,7 +118,13 @@ impl CtxWatcher {
                     continue;
                 }
 
-                debug!("L{} .ctx grew {}→{} bytes (+{})", layer, last_size, current_size, current_size - last_size);
+                debug!(
+                    "L{} .ctx grew {}→{} bytes (+{})",
+                    layer,
+                    last_size,
+                    current_size,
+                    current_size - last_size
+                );
 
                 let change = CtxChange {
                     layer: *layer,

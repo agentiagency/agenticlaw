@@ -46,11 +46,15 @@ pub enum LlmContent {
 }
 
 impl From<String> for LlmContent {
-    fn from(s: String) -> Self { LlmContent::Text(s) }
+    fn from(s: String) -> Self {
+        LlmContent::Text(s)
+    }
 }
 
 impl From<&str> for LlmContent {
-    fn from(s: &str) -> Self { LlmContent::Text(s.to_string()) }
+    fn from(s: &str) -> Self {
+        LlmContent::Text(s.to_string())
+    }
 }
 
 /// Content block types
@@ -86,13 +90,25 @@ pub struct LlmTool {
 
 /// Streaming delta from LLM
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum StreamDelta {
     Text(String),
     Thinking(String),
-    ToolCallStart { id: String, name: String },
-    ToolCallDelta { id: String, arguments: String },
-    ToolCallEnd { id: String },
-    Done { stop_reason: Option<String>, usage: Option<Usage> },
+    ToolCallStart {
+        id: String,
+        name: String,
+    },
+    ToolCallDelta {
+        id: String,
+        arguments: String,
+    },
+    ToolCallEnd {
+        id: String,
+    },
+    Done {
+        stop_reason: Option<String>,
+        usage: Option<Usage>,
+    },
     Error(String),
 }
 
@@ -170,7 +186,8 @@ pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
                             for id in &missing {
                                 blocks.push(ContentBlock::ToolResult {
                                     tool_use_id: id.clone(),
-                                    content: "[cancelled] Tool execution was interrupted.".to_string(),
+                                    content: "[cancelled] Tool execution was interrupted."
+                                        .to_string(),
                                     is_error: Some(true),
                                 });
                             }
@@ -207,9 +224,16 @@ pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
 
 fn extract_tool_use_ids(content: &LlmContent) -> Vec<String> {
     match content {
-        LlmContent::Blocks(blocks) => blocks.iter().filter_map(|b| {
-            if let ContentBlock::ToolUse { id, .. } = b { Some(id.clone()) } else { None }
-        }).collect(),
+        LlmContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|b| {
+                if let ContentBlock::ToolUse { id, .. } = b {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => vec![],
     }
 }
@@ -220,14 +244,21 @@ fn dedup_tool_results(msg: &LlmMessage) -> LlmMessage {
     match &msg.content {
         LlmContent::Blocks(blocks) => {
             let mut seen_ids = std::collections::HashSet::new();
-            let deduped: Vec<ContentBlock> = blocks.iter().filter(|b| {
-                if let ContentBlock::ToolResult { tool_use_id, .. } = b {
-                    seen_ids.insert(tool_use_id.clone())
-                } else {
-                    true
-                }
-            }).cloned().collect();
-            LlmMessage { role: msg.role.clone(), content: LlmContent::Blocks(deduped) }
+            let deduped: Vec<ContentBlock> = blocks
+                .iter()
+                .filter(|b| {
+                    if let ContentBlock::ToolResult { tool_use_id, .. } = b {
+                        seen_ids.insert(tool_use_id.clone())
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+            LlmMessage {
+                role: msg.role.clone(),
+                content: LlmContent::Blocks(deduped),
+            }
         }
         _ => msg.clone(),
     }
@@ -235,9 +266,16 @@ fn dedup_tool_results(msg: &LlmMessage) -> LlmMessage {
 
 fn extract_tool_result_ids(content: &LlmContent) -> Vec<String> {
     match content {
-        LlmContent::Blocks(blocks) => blocks.iter().filter_map(|b| {
-            if let ContentBlock::ToolResult { tool_use_id, .. } = b { Some(tool_use_id.clone()) } else { None }
-        }).collect(),
+        LlmContent::Blocks(blocks) => blocks
+            .iter()
+            .filter_map(|b| {
+                if let ContentBlock::ToolResult { tool_use_id, .. } = b {
+                    Some(tool_use_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect(),
         _ => vec![],
     }
 }

@@ -4,13 +4,15 @@
 //! OutputEvents to connected clients via broadcast subscription.
 
 use crate::auth::ResolvedAuth;
-use crate::rpc::{self, ConnectionContext, output_event_to_message};
-use axum::extract::ws::{Message as WsMessage, WebSocket};
-use futures::{SinkExt, StreamExt};
+use crate::rpc::{self, output_event_to_message, ConnectionContext};
 use agenticlaw_agent::{AgentRuntime, OutputEvent};
 use agenticlaw_core::{EventMessage, IncomingMessage, RpcResponse};
+use axum::extract::ws::{Message as WsMessage, WebSocket};
+use futures::{SinkExt, StreamExt};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 /// Shared state for WebSocket connections.
@@ -42,11 +44,16 @@ pub async fn handle_connection(socket: WebSocket, state: Arc<WsState>) {
 
     let mut authenticated = false;
 
+    // Per-connection cancellation tokens for HITL preemption
+    let turn_cancels: Arc<Mutex<HashMap<String, CancellationToken>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     // Connection context for RPC handlers
     let ctx = ConnectionContext {
         authenticated: false,
         agent: state.agent.clone(),
         output_tx: state.output_tx.clone(),
+        turn_cancels: turn_cancels.clone(),
     };
 
     loop {
@@ -151,6 +158,7 @@ async fn handle_text_message(
                 authenticated: *authenticated,
                 agent: ctx.agent.clone(),
                 output_tx: ctx.output_tx.clone(),
+                turn_cancels: ctx.turn_cancels.clone(),
             };
             let result = rpc::route_rpc(&req.method, req.params, &rpc_ctx).await;
             let resp = rpc::to_response(&req.id, result);
@@ -183,7 +191,8 @@ async fn handle_text_message(
         Err(_) => {
             // Try legacy v2 protocol as fallback
             if let Ok(legacy) = serde_json::from_str::<agenticlaw_core::ClientMessage>(text) {
-                let legacy_responses = handle_legacy_message(legacy, state, authenticated).await;
+                let legacy_responses =
+                    handle_legacy_message(legacy, state, authenticated, &ctx.turn_cancels).await;
                 responses.extend(legacy_responses);
             } else {
                 warn!("Unparseable message: {}", &text[..text.len().min(100)]);
@@ -199,31 +208,37 @@ async fn handle_legacy_message(
     msg: agenticlaw_core::ClientMessage,
     state: &Arc<WsState>,
     authenticated: &mut bool,
+    turn_cancels: &Arc<Mutex<HashMap<String, CancellationToken>>>,
 ) -> Vec<String> {
     use agenticlaw_core::{ClientMessage, ServerMessage};
     let mut responses = Vec::new();
 
     match msg {
-        ClientMessage::Auth { token } => {
-            match state.auth.verify_token(token.as_deref()) {
-                Ok(()) => {
-                    *authenticated = true;
-                    if let Ok(json) = serde_json::to_string(&ServerMessage::auth_ok()) {
-                        responses.push(json);
-                    }
-                    info!("Client authenticated (legacy)");
+        ClientMessage::Auth { token } => match state.auth.verify_token(token.as_deref()) {
+            Ok(()) => {
+                *authenticated = true;
+                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_ok()) {
+                    responses.push(json);
                 }
-                Err(e) => {
-                    if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed(e.to_string())) {
-                        responses.push(json);
-                    }
-                    warn!("Auth failed: {}", e);
-                }
+                info!("Client authenticated (legacy)");
             }
-        }
-        ClientMessage::Chat { session, message, model } => {
+            Err(e) => {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed(e.to_string()))
+                {
+                    responses.push(json);
+                }
+                warn!("Auth failed: {}", e);
+            }
+        },
+        ClientMessage::Chat {
+            session,
+            message,
+            model,
+        } => {
             if !*authenticated {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed("not authenticated")) {
+                if let Ok(json) =
+                    serde_json::to_string(&ServerMessage::auth_failed("not authenticated"))
+                {
                     responses.push(json);
                 }
                 return responses;
@@ -234,6 +249,7 @@ async fn handle_legacy_message(
                 authenticated: true,
                 agent: state.agent.clone(),
                 output_tx: state.output_tx.clone(),
+                turn_cancels: turn_cancels.clone(),
             };
             let mut params = serde_json::json!({ "session": session, "message": message });
             if let Some(m) = model {
@@ -243,6 +259,13 @@ async fn handle_legacy_message(
             // Events stream via broadcast — no direct response needed for legacy
         }
         ClientMessage::Abort { session } => {
+            // Cancel via CancellationToken first
+            {
+                let mut cancels = turn_cancels.lock().await;
+                if let Some(token) = cancels.remove(&session) {
+                    token.cancel();
+                }
+            }
             let session_key = agenticlaw_agent::SessionKey::new(&session);
             if let Some(sess) = state.agent.sessions().get(&session_key) {
                 sess.abort().await;
@@ -250,7 +273,9 @@ async fn handle_legacy_message(
         }
         ClientMessage::Call { id, method, params } => {
             if !*authenticated {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::result_error(&id, "not authenticated")) {
+                if let Ok(json) =
+                    serde_json::to_string(&ServerMessage::result_error(&id, "not authenticated"))
+                {
                     responses.push(json);
                 }
                 return responses;
@@ -260,6 +285,7 @@ async fn handle_legacy_message(
                 authenticated: true,
                 agent: state.agent.clone(),
                 output_tx: state.output_tx.clone(),
+                turn_cancels: turn_cancels.clone(),
             };
             let result = rpc::route_rpc(&method, params, &ctx).await;
             let legacy_msg = match result {

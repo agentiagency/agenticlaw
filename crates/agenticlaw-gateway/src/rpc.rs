@@ -6,8 +6,10 @@
 use agenticlaw_agent::{AgentEvent, AgentRuntime, OutputEvent, SessionKey};
 use agenticlaw_core::{EventMessage, RpcResponse};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 /// Connection context passed to RPC handlers.
@@ -15,17 +17,15 @@ pub struct ConnectionContext {
     pub authenticated: bool,
     pub agent: Arc<AgentRuntime>,
     pub output_tx: broadcast::Sender<OutputEvent>,
+    /// Per-session cancellation tokens — cancelled when a new message preempts the current turn.
+    pub turn_cancels: Arc<Mutex<HashMap<String, CancellationToken>>>,
 }
 
 /// Result type for RPC handlers.
 pub type RpcResult = Result<Value, (i32, String)>;
 
 /// Route an RPC method call to the appropriate handler.
-pub async fn route_rpc(
-    method: &str,
-    params: Value,
-    ctx: &ConnectionContext,
-) -> RpcResult {
+pub async fn route_rpc(method: &str, params: Value, ctx: &ConnectionContext) -> RpcResult {
     // Auth check — most methods require authentication
     if !ctx.authenticated && method != "auth" {
         return Err((-32000, "Not authenticated".to_string()));
@@ -58,10 +58,12 @@ pub fn to_response(id: &str, result: RpcResult) -> RpcResponse {
 // ---------------------------------------------------------------------------
 
 async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
-    let session = params["session"].as_str()
+    let session = params["session"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?
         .to_string();
-    let message = params["message"].as_str()
+    let message = params["message"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: message".to_string()))?
         .to_string();
     let model = params["model"].as_str().map(String::from);
@@ -75,13 +77,28 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
         }
     }
 
-    info!("chat.send: session={} message={}", session, &message[..message.len().min(50)]);
+    info!(
+        "chat.send: session={} message={}",
+        session,
+        &message[..message.len().min(50)]
+    );
+
+    // Cancel any in-flight turn for this session (HITL preemption)
+    let cancel_token = CancellationToken::new();
+    {
+        let mut cancels = ctx.turn_cancels.lock().await;
+        if let Some(old_token) = cancels.insert(session.clone(), cancel_token.clone()) {
+            info!("Preempting in-flight turn for session={}", session);
+            old_token.cancel();
+        }
+    }
 
     // Spawn the agent turn in the background
     let agent = ctx.agent.clone();
     let output_tx = ctx.output_tx.clone();
     let session_clone = session.clone();
     let sk = session_key.clone();
+    let turn_cancels = ctx.turn_cancels.clone();
 
     tokio::spawn(async move {
         let (event_tx, mut event_rx) = mpsc::channel::<AgentEvent>(256);
@@ -115,7 +132,12 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
                         id,
                         name,
                     },
-                    AgentEvent::ToolResult { id, name, result, is_error } => OutputEvent::ToolResult {
+                    AgentEvent::ToolResult {
+                        id,
+                        name,
+                        result,
+                        is_error,
+                    } => OutputEvent::ToolResult {
                         session: fwd_session.clone(),
                         id,
                         name,
@@ -138,8 +160,20 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
             }
         });
 
-        let result = agent.run_turn(&sk, &message, event_tx).await;
+        let result = agent
+            .run_turn_cancellable(&sk, &message, event_tx, cancel_token.clone())
+            .await;
         let _ = forward_task.await;
+
+        // Clean up cancellation token if it's still ours (not replaced by a newer turn)
+        {
+            let mut cancels = turn_cancels.lock().await;
+            if let Some(token) = cancels.get(&session_clone) {
+                if token.is_cancelled() == cancel_token.is_cancelled() {
+                    cancels.remove(&session_clone);
+                }
+            }
+        }
 
         if let Err(e) = result {
             let _ = output_tx.send(OutputEvent::Error {
@@ -158,11 +192,15 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
 // ---------------------------------------------------------------------------
 
 async fn handle_chat_history(params: Value, ctx: &ConnectionContext) -> RpcResult {
-    let session = params["session"].as_str()
+    let session = params["session"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?;
 
     let session_key = SessionKey::new(session);
-    let sess = ctx.agent.sessions().get(&session_key)
+    let sess = ctx
+        .agent
+        .sessions()
+        .get(&session_key)
         .ok_or_else(|| (-32001, format!("Session not found: {}", session)))?;
 
     let messages = sess.get_messages().await;
@@ -193,16 +231,28 @@ async fn handle_chat_history(params: Value, ctx: &ConnectionContext) -> RpcResul
 // ---------------------------------------------------------------------------
 
 async fn handle_chat_abort(params: Value, ctx: &ConnectionContext) -> RpcResult {
-    let session = params["session"].as_str()
+    let session = params["session"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?;
 
+    // Cancel via CancellationToken (preferred — cleanly stops LLM stream + tools)
+    {
+        let mut cancels = ctx.turn_cancels.lock().await;
+        if let Some(token) = cancels.remove(session) {
+            token.cancel();
+            info!("Cancelled in-flight turn for session: {}", session);
+        }
+    }
+
+    // Also call session abort for legacy cleanup
     let session_key = SessionKey::new(session);
     if let Some(sess) = ctx.agent.sessions().get(&session_key) {
         sess.abort().await;
         info!("Aborted session: {}", session);
         Ok(serde_json::json!({ "ok": true }))
     } else {
-        Err((-32001, format!("Session not found: {}", session)))
+        // Token cancel may have succeeded even if session not found
+        Ok(serde_json::json!({ "ok": true }))
     }
 }
 
@@ -211,7 +261,10 @@ async fn handle_chat_abort(params: Value, ctx: &ConnectionContext) -> RpcResult 
 // ---------------------------------------------------------------------------
 
 async fn handle_sessions_list(ctx: &ConnectionContext) -> RpcResult {
-    let sessions: Vec<String> = ctx.agent.sessions().list()
+    let sessions: Vec<String> = ctx
+        .agent
+        .sessions()
+        .list()
         .into_iter()
         .map(|k| k.as_str().to_string())
         .collect();
@@ -223,11 +276,15 @@ async fn handle_sessions_list(ctx: &ConnectionContext) -> RpcResult {
 // ---------------------------------------------------------------------------
 
 async fn handle_sessions_usage(params: Value, ctx: &ConnectionContext) -> RpcResult {
-    let session = params["session"].as_str()
+    let session = params["session"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?;
 
     let session_key = SessionKey::new(session);
-    let sess = ctx.agent.sessions().get(&session_key)
+    let sess = ctx
+        .agent
+        .sessions()
+        .get(&session_key)
         .ok_or_else(|| (-32001, format!("Session not found: {}", session)))?;
 
     let token_count = sess.token_count().await;
@@ -247,7 +304,8 @@ async fn handle_sessions_usage(params: Value, ctx: &ConnectionContext) -> RpcRes
 // ---------------------------------------------------------------------------
 
 async fn handle_sessions_delete(params: Value, ctx: &ConnectionContext) -> RpcResult {
-    let session = params["session"].as_str()
+    let session = params["session"]
+        .as_str()
         .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?;
 
     let session_key = SessionKey::new(session);
@@ -278,37 +336,57 @@ async fn handle_health(ctx: &ConnectionContext) -> RpcResult {
 // ---------------------------------------------------------------------------
 
 async fn handle_tools_list(ctx: &ConnectionContext) -> RpcResult {
-    let tools: Vec<Value> = ctx.agent.tool_definitions().into_iter().map(|t| {
-        serde_json::json!({
-            "name": t.name,
-            "description": t.description,
+    let tools: Vec<Value> = ctx
+        .agent
+        .tool_definitions()
+        .into_iter()
+        .map(|t| {
+            serde_json::json!({
+                "name": t.name,
+                "description": t.description,
+            })
         })
-    }).collect();
+        .collect();
     Ok(serde_json::json!({ "tools": tools }))
 }
 
 /// Convert an OutputEvent to an EventMessage for WebSocket transmission.
 pub fn output_event_to_message(event: &OutputEvent) -> EventMessage {
     match event {
-        OutputEvent::Delta { session, content } =>
-            EventMessage::chat_delta(session, content),
-        OutputEvent::Thinking { session, content } =>
-            EventMessage::chat_thinking(session, content),
-        OutputEvent::ToolCall { session, id, name } =>
-            EventMessage::chat_tool_call(session, id, name),
-        OutputEvent::ToolCallDelta { session, id, arguments } =>
-            EventMessage::chat_tool_call_delta(session, id, arguments),
-        OutputEvent::ToolExecuting { session, id, name } =>
-            EventMessage::chat(session, "tool_executing", serde_json::json!({ "id": id, "name": name })),
-        OutputEvent::ToolResult { session, id, name, result, is_error } =>
-            EventMessage::chat_tool_result(session, id, name, result, *is_error),
-        OutputEvent::ToolParked { session, id, name } =>
-            EventMessage::tool_parked(session, id, name),
-        OutputEvent::Done { session } =>
-            EventMessage::chat_done(session),
-        OutputEvent::Error { session, message } =>
-            EventMessage::chat_error(session, message),
-        OutputEvent::Sleep { session, token_count } =>
-            EventMessage::chat(session, "sleep", serde_json::json!({ "token_count": token_count })),
+        OutputEvent::Delta { session, content } => EventMessage::chat_delta(session, content),
+        OutputEvent::Thinking { session, content } => EventMessage::chat_thinking(session, content),
+        OutputEvent::ToolCall { session, id, name } => {
+            EventMessage::chat_tool_call(session, id, name)
+        }
+        OutputEvent::ToolCallDelta {
+            session,
+            id,
+            arguments,
+        } => EventMessage::chat_tool_call_delta(session, id, arguments),
+        OutputEvent::ToolExecuting { session, id, name } => EventMessage::chat(
+            session,
+            "tool_executing",
+            serde_json::json!({ "id": id, "name": name }),
+        ),
+        OutputEvent::ToolResult {
+            session,
+            id,
+            name,
+            result,
+            is_error,
+        } => EventMessage::chat_tool_result(session, id, name, result, *is_error),
+        OutputEvent::ToolParked { session, id, name } => {
+            EventMessage::tool_parked(session, id, name)
+        }
+        OutputEvent::Done { session } => EventMessage::chat_done(session),
+        OutputEvent::Error { session, message } => EventMessage::chat_error(session, message),
+        OutputEvent::Sleep {
+            session,
+            token_count,
+        } => EventMessage::chat(
+            session,
+            "sleep",
+            serde_json::json!({ "token_count": token_count }),
+        ),
     }
 }

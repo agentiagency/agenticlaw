@@ -60,10 +60,7 @@ pub fn transform(records: Vec<Record>) -> Vec<SessionEvent> {
                 if let Some(ref call_id) = msg.message.tool_call_id {
                     let content = extract_text_content(&msg.message.content);
                     let is_error = msg.message.is_error.unwrap_or(false);
-                    tool_results.insert(
-                        call_id.clone(),
-                        ToolResultInfo { content, is_error },
-                    );
+                    tool_results.insert(call_id.clone(), ToolResultInfo { content, is_error });
                 }
             }
         }
@@ -121,7 +118,11 @@ pub fn transform(records: Vec<Record>) -> Vec<SessionEvent> {
                             ContentBlock::Thinking { thinking, .. } => {
                                 contents.push(TurnContent::Thinking(thinking.clone()));
                             }
-                            ContentBlock::ToolCall { id, name, arguments } => {
+                            ContentBlock::ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            } => {
                                 let result = tool_results.remove(id);
                                 contents.push(TurnContent::Tool(ToolInteraction {
                                     name: name.clone(),

@@ -1,9 +1,12 @@
-use clap::Parser;
 use agenticlaw::supervisor::poll::run_supervisor;
 use agenticlaw::supervisor::types::{BackoffConfig, SupervisorConfig};
+use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "agenticlaw-supervisor", about = "Supervisor/Guru polling loop for tmux worker sessions")]
+#[command(
+    name = "agenticlaw-supervisor",
+    about = "Supervisor/Guru polling loop for tmux worker sessions"
+)]
 struct Cli {
     /// Base directory for molts workspace (e.g. ~/agentiagency/molts/ws2-7)
     #[arg(long, default_value = ".")]

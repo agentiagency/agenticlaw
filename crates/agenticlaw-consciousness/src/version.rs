@@ -68,7 +68,8 @@ impl VersionController {
                 anyhow::bail!(
                     "Workspace is at schema version {} but binary targets version {}. \
                      Refusing to downgrade. Use a newer binary or explicit rollback.",
-                    current_version, target
+                    current_version,
+                    target
                 );
             }
 
@@ -82,7 +83,11 @@ impl VersionController {
                 return self.migrate_v1_to_v2();
             }
 
-            anyhow::bail!("No migration path from version {} to {}", current_version, target);
+            anyhow::bail!(
+                "No migration path from version {} to {}",
+                current_version,
+                target
+            );
         }
 
         // No manifest — detect version from layout

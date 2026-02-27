@@ -1,5 +1,7 @@
 //! Terminal UI with vim-style editor, streaming output, and context bar
 
+use agenticlaw_agent::{AgentConfig, AgentEvent, AgentRuntime, SessionKey};
+use agenticlaw_tools::create_default_registry;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
@@ -13,12 +15,11 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
-use agenticlaw_agent::{AgentConfig, AgentEvent, AgentRuntime, SessionKey};
-use agenticlaw_tools::create_default_registry;
 use std::io::{self, Stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
 // Vim mode
@@ -188,7 +189,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) -> Option<String> {
         }
 
         // Mode switches
-        KeyCode::Char('i') => { app.mode = VimMode::Insert; None }
+        KeyCode::Char('i') => {
+            app.mode = VimMode::Insert;
+            None
+        }
         KeyCode::Char('a') => {
             app.mode = VimMode::Insert;
             let char_len = app.current_line_char_len();
@@ -236,7 +240,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) -> Option<String> {
             app.clamp_cursor();
             None
         }
-        KeyCode::Char('0') => { app.cursor_col = 0; None }
+        KeyCode::Char('0') => {
+            app.cursor_col = 0;
+            None
+        }
         KeyCode::Char('$') => {
             app.cursor_col = app.current_line_char_len().saturating_sub(1).max(0);
             None
@@ -247,9 +254,13 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) -> Option<String> {
             let chars: Vec<char> = line.chars().collect();
             let mut i = app.cursor_col;
             // skip current non-whitespace
-            while i < chars.len() && !chars[i].is_whitespace() { i += 1; }
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
             // skip whitespace
-            while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
             app.cursor_col = i.min(chars.len().saturating_sub(1));
             None
         }
@@ -260,9 +271,13 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) -> Option<String> {
                 let chars: Vec<char> = line.chars().collect();
                 let mut i = app.cursor_col.saturating_sub(1);
                 // skip whitespace backwards
-                while i > 0 && chars[i].is_whitespace() { i -= 1; }
+                while i > 0 && chars[i].is_whitespace() {
+                    i -= 1;
+                }
                 // skip non-whitespace backwards
-                while i > 0 && !chars[i - 1].is_whitespace() { i -= 1; }
+                while i > 0 && !chars[i - 1].is_whitespace() {
+                    i -= 1;
+                }
                 app.cursor_col = i;
             }
             None
@@ -348,7 +363,10 @@ fn handle_insert_key(app: &mut App, key: KeyEvent) -> Option<String> {
             app.cursor_col += 1;
             None
         }
-        KeyCode::Left => { app.cursor_col = app.cursor_col.saturating_sub(1); None }
+        KeyCode::Left => {
+            app.cursor_col = app.cursor_col.saturating_sub(1);
+            None
+        }
         KeyCode::Right => {
             let char_len = app.current_line_char_len();
             app.cursor_col = (app.cursor_col + 1).min(char_len);
@@ -360,7 +378,9 @@ fn handle_insert_key(app: &mut App, key: KeyEvent) -> Option<String> {
             None
         }
         KeyCode::Down => {
-            if app.cursor_row + 1 < app.editor_lines.len() { app.cursor_row += 1; }
+            if app.cursor_row + 1 < app.editor_lines.len() {
+                app.cursor_row += 1;
+            }
             app.clamp_cursor();
             None
         }
@@ -379,9 +399,9 @@ fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),           // output
-            Constraint::Percentage(25),   // editor
-            Constraint::Length(1),        // status bar
+            Constraint::Min(1),         // output
+            Constraint::Percentage(25), // editor
+            Constraint::Length(1),      // status bar
         ])
         .split(size);
 
@@ -412,11 +432,19 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = if app.agent_running { " Output [running...] " } else { " Output " };
+    let title = if app.agent_running {
+        " Output [running...] "
+    } else {
+        " Output "
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
-        .border_style(Style::default().fg(if app.agent_running { Color::Yellow } else { Color::DarkGray }));
+        .border_style(Style::default().fg(if app.agent_running {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        }));
 
     let paragraph = Paragraph::new(lines)
         .block(block)
@@ -426,7 +454,9 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
-    let lines: Vec<Line> = app.editor_lines.iter()
+    let lines: Vec<Line> = app
+        .editor_lines
+        .iter()
         .map(|l| Line::from(l.as_str()))
         .collect();
 
@@ -450,14 +480,25 @@ fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let ctx_pct = if app.context_max > 0 {
         ((app.context_used as f64 / app.context_max as f64) * 100.0).min(100.0) as u16
-    } else { 0 };
+    } else {
+        0
+    };
 
-    let ctx_color = if ctx_pct > 80 { Color::Red } else if ctx_pct > 50 { Color::Yellow } else { Color::Green };
+    let ctx_color = if ctx_pct > 80 {
+        Color::Red
+    } else if ctx_pct > 50 {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
 
     // Build status line as a gauge-like bar
     let mode_span = Span::styled(
         format!(" {} ", app.mode.label()),
-        Style::default().fg(Color::Black).bg(app.mode.color()).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Black)
+            .bg(app.mode.color())
+            .add_modifier(Modifier::BOLD),
     );
     let model_span = Span::styled(
         format!(" {} ", app.model),
@@ -470,14 +511,11 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 
     // Context bar
     let bar_width = area.width.saturating_sub(
-        mode_span.width() as u16 + model_span.width() as u16 + session_span.width() as u16 + 12
+        mode_span.width() as u16 + model_span.width() as u16 + session_span.width() as u16 + 12,
     ) as usize;
     let filled = (bar_width as f64 * ctx_pct as f64 / 100.0) as usize;
     let empty = bar_width.saturating_sub(filled);
-    let bar = format!("{}{}",
-        "█".repeat(filled),
-        "░".repeat(empty),
-    );
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty),);
     let ctx_span = Span::styled(
         format!(" {}% {} ", ctx_pct, bar),
         Style::default().fg(ctx_color),
@@ -524,11 +562,20 @@ pub async fn run_tui(
         // If --session is specified with --resume, find that specific session;
         // otherwise resume the latest session.
         let ctx = if let Some(ref name) = session_name {
-            agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name)
-                .ok_or_else(|| anyhow::anyhow!("No .ctx file found for session '{}' in {}", name, workspace_root.join(".agenticlaw/sessions").display()))?
+            agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No .ctx file found for session '{}' in {}",
+                    name,
+                    workspace_root.join(".agenticlaw/sessions").display()
+                )
+            })?
         } else {
-            agenticlaw_agent::ctx_file::find_latest(&workspace_root)
-                .ok_or_else(|| anyhow::anyhow!("No .ctx files found to resume in {}", workspace_root.join(".agenticlaw/sessions").display()))?
+            agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No .ctx files found to resume in {}",
+                    workspace_root.join(".agenticlaw/sessions").display()
+                )
+            })?
         };
         let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx)?;
         let key = SessionKey::new(&resumed.session_id);
@@ -536,9 +583,8 @@ pub async fn run_tui(
         runtime.sessions().resume_from_ctx(&resumed);
         (key, path)
     } else {
-        let session_id = session_name.unwrap_or_else(|| {
-            uuid::Uuid::new_v4().to_string()[..8].to_string()
-        });
+        let session_id =
+            session_name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
         let key = SessionKey::new(&session_id);
         let path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, &session_id);
         (key, path)
@@ -563,7 +609,6 @@ pub async fn run_tui(
 
     // Channels for agent events
     let (agent_event_tx, mut agent_event_rx) = mpsc::channel::<AgentEvent>(256);
-    let (abort_tx, _abort_rx) = watch::channel(false);
 
     // Event loop
     let result = run_event_loop(
@@ -573,8 +618,8 @@ pub async fn run_tui(
         session_key,
         &mut agent_event_rx,
         agent_event_tx,
-        abort_tx,
-    ).await;
+    )
+    .await;
 
     // Restore terminal
     terminal::disable_raw_mode()?;
@@ -592,8 +637,9 @@ async fn run_event_loop(
     session_key: SessionKey,
     agent_event_rx: &mut mpsc::Receiver<AgentEvent>,
     agent_event_tx: mpsc::Sender<AgentEvent>,
-    abort_tx: watch::Sender<bool>,
 ) -> anyhow::Result<()> {
+    // Cancellation token for the current in-flight turn
+    let mut current_cancel: Option<CancellationToken> = None;
     loop {
         // Draw
         terminal.draw(|f| draw(f, app))?;
@@ -606,44 +652,42 @@ async fn run_event_loop(
             if let Event::Key(key) = event::read()? {
                 // ESC in normal mode while agent running = abort
                 if key.code == KeyCode::Esc && app.mode == VimMode::Normal && app.agent_running {
-                    let _ = abort_tx.send(true);
+                    // Cancel via CancellationToken — cleanly stops LLM stream and tools
+                    if let Some(ref token) = current_cancel {
+                        token.cancel();
+                    }
                     app.agent_running = false;
                     app.push_output("\n[cancelled]\n");
                     continue;
                 }
 
                 if let Some(message) = handle_key(app, key) {
+                    // Cancel any in-flight turn (HITL preemption)
+                    if let Some(ref token) = current_cancel {
+                        token.cancel();
+                    }
+
+                    // Create fresh cancellation token for this turn
+                    let cancel = CancellationToken::new();
+                    current_cancel = Some(cancel.clone());
+
                     // Send message to agent
                     app.agent_running = true;
                     let rt = runtime.clone();
                     let sk = session_key.clone();
                     let tx = agent_event_tx.clone();
-                    let mut abort_rx = abort_tx.subscribe();
 
                     tokio::spawn(async move {
-                        let turn = rt.run_turn(&sk, &message, tx);
-                        tokio::select! {
-                            result = turn => {
-                                if let Err(e) = result {
-                                    tracing::error!("Turn error: {}", e);
-                                }
-                            }
-                            _ = async {
-                                loop {
-                                    abort_rx.changed().await.ok();
-                                    if *abort_rx.borrow() { break; }
-                                }
-                            } => {
-                                // Aborted
-                            }
+                        let result = rt.run_turn_cancellable(&sk, &message, tx, cancel).await;
+                        if let Err(e) = result {
+                            tracing::error!("Turn error: {}", e);
                         }
                     });
-
-                    // Reset abort flag
-                    let _ = abort_tx.send(false);
                 }
 
-                if app.should_quit { break; }
+                if app.should_quit {
+                    break;
+                }
             }
         }
 
@@ -658,9 +702,14 @@ async fn run_event_loop(
                 AgentEvent::ToolExecuting { name, .. } => {
                     app.push_output(&format!("  executing {}...", name));
                 }
-                AgentEvent::ToolResult { result, is_error, .. } => {
+                AgentEvent::ToolResult {
+                    result, is_error, ..
+                } => {
                     if is_error {
-                        app.push_output(&format!("  error: {}\n", &result[..result.len().min(200)]));
+                        app.push_output(&format!(
+                            "  error: {}\n",
+                            &result[..result.len().min(200)]
+                        ));
                     } else {
                         app.push_output(&format!("  done ({} chars)\n", result.len()));
                     }

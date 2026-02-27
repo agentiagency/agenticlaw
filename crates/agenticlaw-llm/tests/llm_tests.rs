@@ -53,9 +53,7 @@ fn llm_content_text_serde() {
 
 #[test]
 fn llm_content_blocks_serde() {
-    let c = LlmContent::Blocks(vec![
-        ContentBlock::Text { text: "hi".into() },
-    ]);
+    let c = LlmContent::Blocks(vec![ContentBlock::Text { text: "hi".into() }]);
     let json = serde_json::to_string(&c).unwrap();
     assert!(json.contains(r#""type":"text""#));
     let back: LlmContent = serde_json::from_str(&json).unwrap();
@@ -77,7 +75,9 @@ fn llm_content_blocks_serde() {
 
 #[test]
 fn content_block_text_serde() {
-    let b = ContentBlock::Text { text: "hello".into() };
+    let b = ContentBlock::Text {
+        text: "hello".into(),
+    };
     let json = serde_json::to_string(&b).unwrap();
     assert!(json.contains(r#""type":"text""#));
     let back: ContentBlock = serde_json::from_str(&json).unwrap();
@@ -118,7 +118,11 @@ fn content_block_tool_result_serde() {
     assert!(json.contains(r#""type":"tool_result""#));
     let back: ContentBlock = serde_json::from_str(&json).unwrap();
     match back {
-        ContentBlock::ToolResult { tool_use_id, content, is_error } => {
+        ContentBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => {
             assert_eq!(tool_use_id, "tc-1");
             assert_eq!(content, "file contents");
             assert_eq!(is_error, Some(false));
@@ -215,7 +219,10 @@ fn usage_default() {
 
 #[test]
 fn usage_serde() {
-    let u = Usage { input_tokens: 100, output_tokens: 50 };
+    let u = Usage {
+        input_tokens: 100,
+        output_tokens: 50,
+    };
     let json = serde_json::to_string(&u).unwrap();
     let back: Usage = serde_json::from_str(&json).unwrap();
     assert_eq!(back.input_tokens, 100);
@@ -228,18 +235,28 @@ fn usage_serde() {
 
 fn load_api_key() -> Option<String> {
     let output = std::process::Command::new("bash")
-        .args(["-c", "source ~/.keys.sh 2>/dev/null && echo $ANTHROPIC_API_KEY"])
+        .args([
+            "-c",
+            "source ~/.keys.sh 2>/dev/null && echo $ANTHROPIC_API_KEY",
+        ])
         .output()
         .ok()?;
     let key = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if key.is_empty() { None } else { Some(key) }
+    if key.is_empty() {
+        None
+    } else {
+        Some(key)
+    }
 }
 
 #[tokio::test]
 async fn anthropic_provider_simple_text_response() {
     let api_key = match load_api_key() {
         Some(k) => k,
-        None => { eprintln!("SKIP: no ANTHROPIC_API_KEY"); return; }
+        None => {
+            eprintln!("SKIP: no ANTHROPIC_API_KEY");
+            return;
+        }
     };
 
     let provider = AnthropicProvider::new(&api_key);
@@ -250,14 +267,19 @@ async fn anthropic_provider_simple_text_response() {
         model: "claude-haiku-4-5-20251001".into(),
         messages: vec![LlmMessage {
             role: "user".into(),
-            content: LlmContent::Text("Reply with exactly the word 'pong' and nothing else.".into()),
+            content: LlmContent::Text(
+                "Reply with exactly the word 'pong' and nothing else.".into(),
+            ),
         }],
         max_tokens: Some(32),
         ..Default::default()
     };
 
     use futures::StreamExt;
-    let stream = provider.complete_stream(request).await.expect("API call failed");
+    let stream = provider
+        .complete_stream(request)
+        .await
+        .expect("API call failed");
     tokio::pin!(stream);
 
     let mut text = String::new();
@@ -272,7 +294,11 @@ async fn anthropic_provider_simple_text_response() {
     }
 
     let lower = text.to_lowercase();
-    assert!(lower.contains("pong"), "Expected 'pong' in response, got: {}", text);
+    assert!(
+        lower.contains("pong"),
+        "Expected 'pong' in response, got: {}",
+        text
+    );
     assert!(got_done, "Never received Done delta");
 }
 
@@ -280,7 +306,10 @@ async fn anthropic_provider_simple_text_response() {
 async fn anthropic_provider_with_tools() {
     let api_key = match load_api_key() {
         Some(k) => k,
-        None => { eprintln!("SKIP: no ANTHROPIC_API_KEY"); return; }
+        None => {
+            eprintln!("SKIP: no ANTHROPIC_API_KEY");
+            return;
+        }
     };
 
     let provider = AnthropicProvider::new(&api_key);
@@ -307,7 +336,10 @@ async fn anthropic_provider_with_tools() {
     };
 
     use futures::StreamExt;
-    let stream = provider.complete_stream(request).await.expect("API call failed");
+    let stream = provider
+        .complete_stream(request)
+        .await
+        .expect("API call failed");
     tokio::pin!(stream);
 
     let mut got_tool_start = false;
@@ -339,7 +371,11 @@ async fn anthropic_provider_with_tools() {
     let args: serde_json::Value = serde_json::from_str(&tool_args)
         .unwrap_or_else(|e| panic!("Failed to parse tool args '{}': {}", tool_args, e));
     let city = args["city"].as_str().unwrap_or("");
-    assert!(city.to_lowercase().contains("paris"), "Expected Paris in args, got: {}", city);
+    assert!(
+        city.to_lowercase().contains("paris"),
+        "Expected Paris in args, got: {}",
+        city
+    );
 }
 
 #[tokio::test]

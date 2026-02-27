@@ -76,7 +76,9 @@ pub struct NodeTypeRegistry {
 
 impl NodeTypeRegistry {
     pub fn new() -> Self {
-        Self { types: HashMap::new() }
+        Self {
+            types: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, node_type: NodeType) {
@@ -89,11 +91,7 @@ impl NodeTypeRegistry {
 
     pub fn children_of(&self, id: &str) -> Vec<&NodeType> {
         self.get(id)
-            .map(|nt| {
-                nt.children.iter()
-                    .filter_map(|cid| self.get(cid))
-                    .collect()
-            })
+            .map(|nt| nt.children.iter().filter_map(|cid| self.get(cid)).collect())
             .unwrap_or_default()
     }
 
@@ -103,17 +101,20 @@ impl NodeTypeRegistry {
 
     /// Render a purpose template with context variables.
     pub fn render_purpose(&self, id: &str, vars: &TemplateVars) -> Option<String> {
-        self.get(id).map(|nt| render_template(&nt.purpose_template, vars))
+        self.get(id)
+            .map(|nt| render_template(&nt.purpose_template, vars))
     }
 
     /// Render a fear template with context variables.
     pub fn render_fear(&self, id: &str, vars: &TemplateVars) -> Option<String> {
-        self.get(id).map(|nt| render_template(&nt.fear_template, vars))
+        self.get(id)
+            .map(|nt| render_template(&nt.fear_template, vars))
     }
 
     /// Render a prompt template with context variables.
     pub fn render_prompt(&self, id: &str, vars: &TemplateVars) -> Option<String> {
-        self.get(id).map(|nt| render_template(&nt.prompt_template, vars))
+        self.get(id)
+            .map(|nt| render_template(&nt.prompt_template, vars))
     }
 }
 
@@ -288,9 +289,11 @@ pub fn default_issue_registry() -> NodeTypeRegistry {
         name: "Check Open PR Conflicts".into(),
         taxonomy_ref: Some("10.1".into()), // Git Operations
         purpose_template: "Check if any open PRs touch the same files we plan to modify.".into(),
-        fear_template: "If there are conflicts, report them but do NOT stop. The plan will note conflicts \
+        fear_template:
+            "If there are conflicts, report them but do NOT stop. The plan will note conflicts \
                         and the implementation will handle them (rebase, coordinate). \
-                        Only check files we plan to modify — not the whole repo.".into(),
+                        Only check files we plan to modify — not the whole repo."
+                .into(),
         prompt_template: "Files we plan to modify:\n{parent_output}\n\n\
                          Check for conflicts with open PRs:\n\
                          1. `gh pr list --repo {repo} --state open --json number,title,files`\n\
@@ -299,11 +302,14 @@ pub fn default_issue_registry() -> NodeTypeRegistry {
                             ## CONFLICTS\n\
                             - PR #N (title) touches `file.tsx` — we also modify this\n\n\
                             ## NO CONFLICTS\n\
-                            (if none found)".into(),
+                            (if none found)"
+            .into(),
         role: OperatorRole::Poke,
         is_leaf: true,
         children: vec![],
-        success_criterion: Some("Output contains either ## CONFLICTS or ## NO CONFLICTS section.".into()),
+        success_criterion: Some(
+            "Output contains either ## CONFLICTS or ## NO CONFLICTS section.".into(),
+        ),
         max_tool_calls: 3,
     });
 
@@ -578,7 +584,13 @@ mod tests {
     #[test]
     fn leaves_are_leaves() {
         let reg = default_issue_registry();
-        for id in &["read-issue", "trace-entrypoints", "identify-files", "create-branch", "run-tests"] {
+        for id in &[
+            "read-issue",
+            "trace-entrypoints",
+            "identify-files",
+            "create-branch",
+            "run-tests",
+        ] {
             let nt = reg.get(id).unwrap();
             assert!(nt.is_leaf, "{} should be a leaf", id);
             assert!(nt.children.is_empty(), "{} should have no children", id);
@@ -601,7 +613,12 @@ mod tests {
         for id in reg.all_ids() {
             let nt = reg.get(id).unwrap();
             for child_id in &nt.children {
-                assert!(reg.get(child_id).is_some(), "child '{}' of '{}' not found in registry", child_id, id);
+                assert!(
+                    reg.get(child_id).is_some(),
+                    "child '{}' of '{}' not found in registry",
+                    child_id,
+                    id
+                );
             }
         }
     }
@@ -625,7 +642,10 @@ mod tests {
     fn operator_roles_assigned() {
         let reg = default_issue_registry();
         assert_eq!(reg.get("read-issue").unwrap().role, OperatorRole::Read);
-        assert_eq!(reg.get("trace-entrypoints").unwrap().role, OperatorRole::Read);
+        assert_eq!(
+            reg.get("trace-entrypoints").unwrap().role,
+            OperatorRole::Read
+        );
         assert_eq!(reg.get("apply-changes").unwrap().role, OperatorRole::Agent);
         assert_eq!(reg.get("create-branch").unwrap().role, OperatorRole::Local);
     }
