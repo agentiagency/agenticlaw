@@ -593,23 +593,17 @@ pub async fn run_tui(
     // --resume without --session resumes the latest session.
     // Only creates a new session if no existing .ctx is found.
     let (session_key, ctx_path) = if let Some(ref name) = session_name {
-        // Named session: ALWAYS resume if .ctx exists. --session X is idempotent.
-        // .ctx filenames are timestamped (YYYYMMDD-HHMMSS-<name>.ctx) so we
-        // search by suffix match, not by constructing a new timestamped path.
-        if let Some(found) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
-            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&found)?;
-            let key = SessionKey::new(&resumed.session_id);
-            let path = resumed.ctx_path.clone();
+        // Named session: stable path <name>.ctx — always the same file.
+        let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
+        let key = SessionKey::new(name);
+        if ctx_path.exists() {
+            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx_path)?;
             runtime.sessions().resume_from_ctx(&resumed);
-            tracing::info!("Resumed session '{}' from {}", name, path.display());
-            (key, path)
+            tracing::info!("Resumed session '{}' from {}", name, ctx_path.display());
         } else {
-            // No existing .ctx — create new session with this name
-            let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
             tracing::info!("Creating new session '{}'", name);
-            let key = SessionKey::new(name);
-            (key, ctx_path)
         }
+        (key, ctx_path)
     } else if resume {
         // --resume without --session: resume latest
         let ctx = agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {
