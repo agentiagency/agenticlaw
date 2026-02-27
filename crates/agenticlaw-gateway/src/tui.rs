@@ -588,34 +588,44 @@ pub async fn run_tui(
     };
     let runtime = Arc::new(AgentRuntime::new(&api_key, tools, config));
 
-    // Resume or create new session
-    let (session_key, ctx_path) = if resume {
-        // If --session is specified with --resume, find that specific session;
-        // otherwise resume the latest session.
-        let ctx = if let Some(ref name) = session_name {
-            agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No .ctx file found for session '{}' in {}",
-                    name,
-                    workspace_root.join(".agenticlaw/sessions").display()
-                )
-            })?
+    // Resume or create session.
+    // --session <name> ALWAYS resumes if a .ctx file exists (no separate --resume needed).
+    // --resume without --session resumes the latest session.
+    // Only creates a new session if no existing .ctx is found.
+    let (session_key, ctx_path) = if let Some(ref name) = session_name {
+        // Named session: ALWAYS resume if .ctx exists. --session X is idempotent.
+        // .ctx filenames are timestamped (YYYYMMDD-HHMMSS-<name>.ctx) so we
+        // search by suffix match, not by constructing a new timestamped path.
+        if let Some(found) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
+            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&found)?;
+            let key = SessionKey::new(&resumed.session_id);
+            let path = resumed.ctx_path.clone();
+            runtime.sessions().resume_from_ctx(&resumed);
+            tracing::info!("Resumed session '{}' from {}", name, path.display());
+            (key, path)
         } else {
-            agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No .ctx files found to resume in {}",
-                    workspace_root.join(".agenticlaw/sessions").display()
-                )
-            })?
-        };
+            // No existing .ctx — create new session with this name
+            let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
+            tracing::info!("Creating new session '{}'", name);
+            let key = SessionKey::new(name);
+            (key, ctx_path)
+        }
+    } else if resume {
+        // --resume without --session: resume latest
+        let ctx = agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {
+            anyhow::anyhow!(
+                "No .ctx files found to resume in {}",
+                workspace_root.join(".agenticlaw/sessions").display()
+            )
+        })?;
         let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx)?;
         let key = SessionKey::new(&resumed.session_id);
         let path = resumed.ctx_path.clone();
         runtime.sessions().resume_from_ctx(&resumed);
         (key, path)
     } else {
-        let session_id =
-            session_name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
+        // No session name, no resume: fresh anonymous session
+        let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         let key = SessionKey::new(&session_id);
         let path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, &session_id);
         (key, path)
