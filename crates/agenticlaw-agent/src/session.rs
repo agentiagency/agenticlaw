@@ -261,8 +261,27 @@ impl Session {
             content: content.to_string(),
             is_error: if is_error { Some(true) } else { None },
         };
-        let message = LlmMessage { role: "user".to_string(), content: LlmContent::Blocks(vec![block]) };
-        self.messages.write().await.push(message);
+
+        let mut messages = self.messages.write().await;
+
+        // Anthropic requires ALL tool_results for a turn in a SINGLE user message.
+        // If the last message is already a user message with tool_result blocks,
+        // append to it instead of creating a new message.
+        let appended = if let Some(last) = messages.last_mut() {
+            if last.role == "user" {
+                if let LlmContent::Blocks(ref mut blocks) = last.content {
+                    if blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })) {
+                        blocks.push(block.clone());
+                        true
+                    } else { false }
+                } else { false }
+            } else { false }
+        } else { false };
+
+        if !appended {
+            messages.push(LlmMessage { role: "user".to_string(), content: LlmContent::Blocks(vec![block]) });
+        }
+        drop(messages);
 
         // Tool results are <up> in .ctx — they're input to the model from outside
         if let Some(ref path) = self.ctx_path {
