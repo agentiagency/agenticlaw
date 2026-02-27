@@ -5,7 +5,7 @@ use crate::types::{LlmRequest, StreamDelta, Usage};
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -78,7 +78,14 @@ impl LlmProvider for AnthropicProvider {
             }),
         };
 
-        debug!("Anthropic request: model={}", body.model);
+        info!(
+            model = %body.model,
+            messages = body.messages.len(),
+            max_tokens = body.max_tokens,
+            has_tools = body.tools.is_some(),
+            tool_count = body.tools.as_ref().map(|t| t.len()).unwrap_or(0),
+            "Anthropic API request"
+        );
 
         let response = self
             .client

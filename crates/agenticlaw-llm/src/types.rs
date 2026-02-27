@@ -143,7 +143,10 @@ impl AccumulatedToolCall {
 /// 2. **Duplicate tool_result** — same tool_use_id appears multiple times.
 ///    Fix: keep only the first tool_result for each id, drop duplicates.
 pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
+    let original_len = messages.len();
     let mut healed: Vec<LlmMessage> = Vec::with_capacity(messages.len());
+    let mut healed_count = 0usize;
+    let mut deduped_count = 0usize;
 
     let mut i = 0;
     while i < messages.len() {
@@ -174,6 +177,12 @@ pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
                     .collect();
 
                 if !missing.is_empty() {
+                    healed_count += missing.len();
+                    tracing::warn!(
+                        orphaned_tool_ids = ?missing,
+                        "Healing {} orphaned tool_use blocks with synthetic tool_results",
+                        missing.len()
+                    );
                     if let Some(next_msg) = next {
                         if next_msg.role == "user" {
                             // Append missing tool_results to the existing user message
@@ -216,6 +225,17 @@ pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
         }
 
         i += 1;
+    }
+
+    if healed_count > 0 || healed.len() != original_len {
+        tracing::info!(
+            original_messages = original_len,
+            healed_messages = healed.len(),
+            orphans_healed = healed_count,
+            "Message validation complete (healing applied)"
+        );
+    } else {
+        tracing::debug!(messages = original_len, "Message validation complete (no healing needed)");
     }
 
     healed

@@ -126,11 +126,11 @@ async fn main() -> anyhow::Result<()> {
                 agenticlaw_gateway::tui::run_tui(cli.workspace, cli.session, None, false).await?;
             } else if cli.no_consciousness {
                 // Lightweight gateway-only mode (customer images)
-                init_tracing();
+                init_tracing(cli.log_file.as_deref());
                 start_gateway_only(&cli).await?;
             } else {
                 // Default: conscious agent
-                init_tracing();
+                init_tracing(cli.log_file.as_deref());
                 start_conscious(&cli).await?;
             }
         }
@@ -139,14 +139,43 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "agenticlaw=info,tower_http=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+fn init_tracing(log_file: Option<&str>) {
+    let env_filter = tracing_subscriber::EnvFilter::try_from_env("AGENTICLAW_LOG")
+        .or_else(|_| tracing_subscriber::EnvFilter::try_from_default_env())
+        .unwrap_or_else(|_| "agenticlaw=info,tower_http=info".into());
+
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_file(false);
+
+    if let Some(path) = log_file {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .expect("Failed to open log file");
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_ansi(false)
+            .json()
+            .with_writer(std::sync::Mutex::new(file))
+            .with_filter(
+                tracing_subscriber::EnvFilter::try_from_env("AGENTICLAW_LOG")
+                    .or_else(|_| tracing_subscriber::EnvFilter::try_from_default_env())
+                    .unwrap_or_else(|_| "agenticlaw=debug,tower_http=info".into()),
+            );
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .with(file_layer)
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .init();
+    }
 }
 
 async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {

@@ -196,6 +196,7 @@ pub fn find_by_id(workspace: &Path, session_id: &str) -> Option<PathBuf> {
     }
 
     let suffix = format!("-{}.ctx", session_id);
+    let exact = format!("{}.ctx", session_id);
     let mut matches: Vec<PathBuf> = fs::read_dir(&sessions_dir)
         .ok()?
         .filter_map(|e| e.ok())
@@ -203,7 +204,7 @@ pub fn find_by_id(workspace: &Path, session_id: &str) -> Option<PathBuf> {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(&suffix))
+                .is_some_and(|n| n.ends_with(&suffix) || n == exact)
         })
         .collect();
 
