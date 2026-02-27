@@ -1,0 +1,17 @@
+#!/bin/bash
+# Pre-commit hook: lint before commit
+set -e
+
+echo "🔍 Checking formatting..."
+cargo fmt --all -- --check || {
+    echo "❌ Format check failed. Run: cargo fmt --all"
+    exit 1
+}
+
+echo "🔍 Running clippy..."
+cargo clippy --workspace -- -D warnings 2>/dev/null || {
+    echo "❌ Clippy failed. Fix warnings before committing."
+    exit 1
+}
+
+echo "✅ Lint passed."
