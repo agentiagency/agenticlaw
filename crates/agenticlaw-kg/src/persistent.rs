@@ -9,7 +9,7 @@
 //! touched wrong files. Thomson closed the PR. Try a different approach."
 
 use agenticlaw_agent::runtime::{AgentEvent, AgentRuntime};
-use agenticlaw_agent::session::{SessionKey, SessionRegistry};
+use agenticlaw_agent::session::SessionKey;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -69,15 +69,15 @@ impl IssueNode {
 
         let rt = runtime as *const AgentRuntime;
         // SAFETY: runtime lives for the duration of this call
-        let runtime_ref: &AgentRuntime = unsafe { &*rt };
+        let _runtime_ref: &AgentRuntime = unsafe { &*rt };
 
         let sk = self.session_key.clone();
         let msg = message.to_string();
 
         // Run the turn — this uses the persistent session with .ctx
         let handle = tokio::spawn({
-            let sk = sk.clone();
-            let msg = msg.clone();
+            let _sk = sk.clone();
+            let _msg = msg.clone();
             // We need to clone the runtime handle. Let's use a different approach.
             async move {
                 // The runtime is passed via the event channel pattern

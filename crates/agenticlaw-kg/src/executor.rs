@@ -15,7 +15,7 @@
 //! - FEAR: constraints, boundaries, what goes wrong if you deviate
 
 use crate::manifest::{NodeState, Outcome, RunManifest};
-use crate::registry::{NodeType, NodeTypeRegistry, OperatorRole, TemplateVars};
+use crate::registry::{NodeType, NodeTypeRegistry, TemplateVars};
 use crate::resource::{Artifact, GraphAddress, KgEvent, ResourceDriver};
 use agenticlaw_agent::runtime::{AgentEvent, AgentRuntime};
 use agenticlaw_agent::session::SessionKey;
@@ -26,6 +26,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 /// Simple hash for logging (not cryptographic).
+#[allow(dead_code)]
 fn short_hash(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -253,7 +254,7 @@ impl Executor {
         run_id: &str,
         node_type: &NodeType,
         addr: &GraphAddress,
-        system_prompt: &str,
+        _system_prompt: &str,
         vars: &TemplateVars,
         manifest: &mut RunManifest,
     ) -> Result<NodeResult> {
@@ -602,7 +603,7 @@ impl Executor {
         if criterion.contains("contains") {
             // Extract quoted strings or section headers
             let checks: Vec<&str> = criterion
-                .split(|c: char| c == '\'' || c == '"')
+                .split(['\'', '"'])
                 .enumerate()
                 .filter(|(i, _)| i % 2 == 1) // odd indices are inside quotes
                 .map(|(_, s)| s)
@@ -619,10 +620,7 @@ impl Executor {
                 .map(|s| {
                     format!(
                         "## {}",
-                        s.split(|c: char| c == ',' || c == '.' || c == ' ')
-                            .next()
-                            .unwrap_or("")
-                            .trim()
+                        s.split([',', '.', ' ']).next().unwrap_or("").trim()
                     )
                 })
                 .filter(|s| s.len() > 3)
@@ -724,7 +722,7 @@ impl Executor {
         })
     }
 
-    fn build_report(&self, run_id: &str, manifest: &RunManifest, result: &NodeResult) -> String {
+    fn build_report(&self, run_id: &str, manifest: &RunManifest, _result: &NodeResult) -> String {
         let mut report = format!(
             "# KG Run Report: {}\n\n## Purpose\n{}\n\n## Target\n{}\n\n## Outcome: {}\n\n",
             run_id, manifest.purpose, manifest.target, manifest.outcome,

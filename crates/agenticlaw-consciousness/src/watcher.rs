@@ -89,7 +89,7 @@ impl CtxWatcher {
 
             // Scan for new .ctx files every 4 poll cycles (2 seconds at 500ms)
             scan_counter += 1;
-            if scan_counter % 4 == 0 {
+            if scan_counter.is_multiple_of(4) {
                 self.scan_for_new_files();
             }
 

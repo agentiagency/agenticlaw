@@ -1,4 +1,9 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    clippy::should_implement_trait,
+    clippy::large_enum_variant,
+    clippy::doc_lazy_continuation
+)]
 
 pub mod supervisor;
 

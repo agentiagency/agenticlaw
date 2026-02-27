@@ -195,11 +195,7 @@ impl DualCore {
             let should_process = {
                 let state = self.state.lock().await;
                 let core = state.core(core_id);
-                match core.phase {
-                    CorePhase::Growing => true,
-                    CorePhase::Seeded => true,
-                    _ => false,
-                }
+                matches!(core.phase, CorePhase::Growing | CorePhase::Seeded)
             };
 
             if !should_process {
@@ -428,16 +424,16 @@ impl DualCore {
 
         for core_id in [CoreId::A, CoreId::B] {
             if let Some(since) = ready[core_id.index()] {
-                if since.elapsed() > Duration::from_secs(30) {
-                    if state.core(core_id).phase == CorePhase::Ready {
-                        warn!(
-                            "{} Ready timeout (30s), reverting to Growing",
-                            CORE_NAMES[core_id.index()]
-                        );
-                        state.core_mut(core_id).phase = CorePhase::Growing;
-                        ready[core_id.index()] = None;
-                        checkpoint_state(&self.state_path, &state);
-                    }
+                if since.elapsed() > Duration::from_secs(30)
+                    && state.core(core_id).phase == CorePhase::Ready
+                {
+                    warn!(
+                        "{} Ready timeout (30s), reverting to Growing",
+                        CORE_NAMES[core_id.index()]
+                    );
+                    state.core_mut(core_id).phase = CorePhase::Growing;
+                    ready[core_id.index()] = None;
+                    checkpoint_state(&self.state_path, &state);
                 }
             }
         }

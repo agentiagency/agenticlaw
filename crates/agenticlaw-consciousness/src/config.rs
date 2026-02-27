@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Top-level consciousness configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ConsciousnessConfig {
     /// Port assignments for L0-L3.
@@ -137,19 +137,7 @@ pub struct SleepConfig {
 // Defaults
 // ============================================================
 
-impl Default for ConsciousnessConfig {
-    fn default() -> Self {
-        Self {
-            ports: PortConfig::default(),
-            models: ModelConfig::default(),
-            ego: EgoConfig::default(),
-            cascade: CascadeConfig::default(),
-            core: CoreConfig::default(),
-            injection: InjectionConfig::default(),
-            sleep: SleepConfig::default(),
-        }
-    }
-}
+// ConsciousnessConfig Default is derived via #[derive(Default)]
 
 impl Default for PortConfig {
     fn default() -> Self {

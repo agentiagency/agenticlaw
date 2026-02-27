@@ -167,14 +167,15 @@ impl Tool for GrepTool {
                             if regex.is_match(line) {
                                 let start = i.saturating_sub(context_lines);
                                 let end = (i + context_lines + 1).min(lines.len());
-                                for j in start..end {
+                                for (j, line_text) in lines.iter().enumerate().take(end).skip(start)
+                                {
                                     let prefix = if j == i { ">" } else { " " };
                                     results.push(format!(
                                         "{}{}:{}:{}",
                                         prefix,
                                         entry.path().display(),
                                         j + 1,
-                                        lines[j]
+                                        line_text
                                     ));
                                 }
                                 if context_lines > 0 && end < lines.len() {
@@ -215,16 +216,16 @@ fn search_file(path: &Path, regex: &Regex, output_mode: &str, context_lines: usi
     match output_mode {
         "files_with_matches" => ToolResult::text(path.to_string_lossy().to_string()),
         "count" => ToolResult::text(format!("{}", regex.find_iter(&content).count())),
-        "content" | _ => {
+        _ => {
             let lines: Vec<&str> = content.lines().collect();
             let mut results = Vec::new();
             for (i, line) in lines.iter().enumerate() {
                 if regex.is_match(line) {
                     let start = i.saturating_sub(context_lines);
                     let end = (i + context_lines + 1).min(lines.len());
-                    for j in start..end {
+                    for (j, line_text) in lines.iter().enumerate().take(end).skip(start) {
                         let prefix = if j == i { ">" } else { " " };
-                        results.push(format!("{}{}:{}", prefix, j + 1, lines[j]));
+                        results.push(format!("{}{}:{}", prefix, j + 1, line_text));
                     }
                     if context_lines > 0 {
                         results.push("--".to_string());

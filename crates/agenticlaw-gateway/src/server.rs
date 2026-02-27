@@ -182,7 +182,7 @@ async fn plan_handler(
 
 /// POST /test — run self-test (bee protocol: sacred endpoint)
 async fn test_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let healthy = state.agent.sessions().list().len() >= 0; // always true; real checks later
+    let healthy = true; // TODO: real health checks later
     Json(serde_json::json!({
         "status": if healthy { "pass" } else { "fail" },
         "version": env!("CARGO_PKG_VERSION"),

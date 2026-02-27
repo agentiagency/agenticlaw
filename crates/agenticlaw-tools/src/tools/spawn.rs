@@ -11,7 +11,7 @@ use crate::registry::{Tool, ToolResult};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 
 /// Shared handle to the agent runtime, set after construction.
 /// This breaks the circular dependency: tools need runtime, runtime needs tools.
@@ -33,6 +33,7 @@ pub trait SpawnableRuntime: Send + Sync {
 }
 
 pub struct SpawnTool {
+    #[allow(dead_code)]
     workspace_root: PathBuf,
     runtime: RuntimeHandle,
     /// Directory for run artifacts. If None, observability is disabled.

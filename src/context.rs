@@ -52,6 +52,7 @@
 //! `<up>` wraps anything that is **input to the model** from outside:
 //! - User messages
 //! - Tool call results
+//!
 //! Everything outside `<up>` is model output.
 //!
 //! # Design principles

@@ -82,7 +82,7 @@ pub fn append_assistant_text(path: &Path, timestamp: &str, content: &str) -> std
 /// Append a tool call line to the current assistant block.
 pub fn append_tool_call(path: &Path, name: &str, args_summary: &str) -> std::io::Result<()> {
     let mut f = OpenOptions::new().append(true).open(path)?;
-    write!(f, "[tool:{}] {}\n", name, args_summary)
+    writeln!(f, "[tool:{}] {}", name, args_summary)
 }
 
 /// Append a tool result as <up> (input to the model from outside).

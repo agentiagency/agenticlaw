@@ -74,6 +74,12 @@ pub struct NodeTypeRegistry {
     types: HashMap<String, NodeType>,
 }
 
+impl Default for NodeTypeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NodeTypeRegistry {
     pub fn new() -> Self {
         Self {

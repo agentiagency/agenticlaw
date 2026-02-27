@@ -432,7 +432,7 @@ impl ConsciousnessStack {
             self.core_soul()
         } else {
             // Core self-distills fresh
-            let warm_dir = self.warm_core_dir();
+            let _warm_dir = self.warm_core_dir();
             let core_ego =
                 ego::distill_core_ego_on_sleep(&self.workspace, &self.api_key, &self.config).await;
             if let Some(ref ego) = core_ego {
@@ -457,7 +457,7 @@ impl ConsciousnessStack {
             let core_ws = self.workspace.join(dir_name);
             let _ = std::fs::create_dir_all(&core_ws);
             if birth {
-                let _ = std::fs::write(core_ws.join("SOUL.md"), &self.core_soul());
+                let _ = std::fs::write(core_ws.join("SOUL.md"), self.core_soul());
             } else {
                 let soul_path = core_ws.join("SOUL.md");
                 if soul_path.exists() {
