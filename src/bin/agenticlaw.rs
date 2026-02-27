@@ -159,10 +159,7 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
                 .map(PathBuf::from)
         })
         .or_else(|| std::env::var("RUSTCLAW_WORKSPACE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/devkit".to_string());
-            PathBuf::from(home).join(".agenticlaw/consciousness")
-        });
+        .unwrap_or_else(|| resolve_default_home().join("consciousness"));
     std::fs::create_dir_all(&workspace)?;
 
     // Resolve souls directory
@@ -242,7 +239,7 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
                 .map(PathBuf::from)
         })
         .or_else(|| std::env::var("RUSTCLAW_WORKSPACE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        .unwrap_or_else(|| resolve_default_home().join("workspace"));
 
     let config = ExtendedConfig {
         gateway: GatewayConfig {
@@ -256,6 +253,19 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
     };
     start_gateway(config).await?;
     Ok(())
+}
+
+/// Resolve the default home directory.
+/// Port 18789 free → ~/.openclaw (drop-in replacement for openclaw)
+/// Port 18789 occupied → ~/.agenticlaw (coexist with running openclaw)
+fn resolve_default_home() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/devkit".to_string());
+    let port_free = std::net::TcpStream::connect("127.0.0.1:18789").is_err();
+    if port_free {
+        PathBuf::from(&home).join(".openclaw")
+    } else {
+        PathBuf::from(&home).join(".agenticlaw")
+    }
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
