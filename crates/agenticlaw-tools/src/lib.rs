@@ -61,6 +61,15 @@ pub fn create_policy_registry(
     workspace_root: impl AsRef<Path>,
     allowed_tools: &[&str],
 ) -> ToolRegistry {
+    create_policy_registry_with_spawn(workspace_root, allowed_tools, create_runtime_handle())
+}
+
+/// Create a policy-scoped registry with spawn support.
+pub fn create_policy_registry_with_spawn(
+    workspace_root: impl AsRef<Path>,
+    allowed_tools: &[&str],
+    runtime_handle: RuntimeHandle,
+) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     let root = workspace_root.as_ref();
 
@@ -72,6 +81,9 @@ pub fn create_policy_registry(
             "write" => registry.register(tools::write::WriteTool::new(root)),
             "edit" => registry.register(tools::edit::EditTool::new(root)),
             "bash" => registry.register(tools::bash::BashTool::new(root)),
+            "spawn" => {
+                registry.register(tools::spawn::SpawnTool::new(root, runtime_handle.clone()))
+            }
             _ => tracing::warn!("Unknown tool in policy: {}", name),
         }
     }

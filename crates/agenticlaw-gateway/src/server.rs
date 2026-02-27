@@ -4,7 +4,7 @@ use crate::auth::ResolvedAuth;
 use crate::ws::{handle_connection, WsState};
 use agenticlaw_agent::{AgentConfig, AgentRuntime, OutputEvent, SessionKey};
 use agenticlaw_core::GatewayConfig;
-use agenticlaw_tools::create_default_registry;
+use agenticlaw_tools::{create_default_registry_with_spawn, create_runtime_handle};
 use axum::{
     extract::{Path as AxumPath, State, WebSocketUpgrade},
     response::{Html, IntoResponse},
@@ -53,7 +53,8 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         .or_else(|_| std::env::var("OPENCLAW_LAYER"))
         .ok();
 
-    let tools = create_default_registry(&config.workspace_root);
+    let runtime_handle = create_runtime_handle();
+    let tools = create_default_registry_with_spawn(&config.workspace_root, runtime_handle.clone());
     info!("Registered tools: {:?}", tools.list());
 
     let agent_config = AgentConfig {
@@ -84,6 +85,12 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
     } else {
         Arc::new(AgentRuntime::new(&api_key, tools, agent_config))
     };
+
+    // Wire runtime handle so spawn tool can create child agents
+    {
+        let mut handle = runtime_handle.write().await;
+        *handle = Some(agent.clone());
+    }
 
     // Create broadcast channel for OutputEvents — fan-out to all WS clients
     let (output_tx, _) = broadcast::channel::<OutputEvent>(1024);
