@@ -709,6 +709,13 @@ pub async fn run_tui(
     let session_id = session_key.as_str().to_string();
     let mut app = App::new(&default_model, &session_id, &ctx_path.to_string_lossy());
 
+    // Load existing .ctx content into the output scroll so the agent sees full history
+    if ctx_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&ctx_path) {
+            app.push_output(&content);
+        }
+    }
+
     // Setup terminal with panic hook to restore on crash
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
