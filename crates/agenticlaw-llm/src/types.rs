@@ -116,3 +116,105 @@ impl AccumulatedToolCall {
         serde_json::from_str(&self.arguments)
     }
 }
+
+/// Validate and heal message history before sending to Anthropic API.
+///
+/// Anthropic requires that every `tool_use` block in an assistant message
+/// has a corresponding `tool_result` block in the immediately following user
+/// message. If a tool call is cancelled or the process crashes mid-execution,
+/// orphaned `tool_use` blocks will cause a 400 error.
+///
+/// This function:
+/// 1. Scans for assistant messages containing `tool_use` blocks
+/// 2. Checks the next message for matching `tool_result` blocks
+/// 3. Injects error `tool_result` blocks for any orphans
+/// 4. Returns the healed message list
+pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
+    let mut healed: Vec<LlmMessage> = Vec::with_capacity(messages.len());
+
+    let mut i = 0;
+    while i < messages.len() {
+        let msg = &messages[i];
+        healed.push(msg.clone());
+
+        // If this is an assistant message, collect tool_use ids
+        if msg.role == "assistant" {
+            let tool_use_ids = extract_tool_use_ids(&msg.content);
+            if !tool_use_ids.is_empty() {
+                // Check the next message for matching tool_results
+                let next = messages.get(i + 1);
+                let existing_result_ids = next
+                    .filter(|m| m.role == "user")
+                    .map(|m| extract_tool_result_ids(&m.content))
+                    .unwrap_or_default();
+
+                let missing: Vec<String> = tool_use_ids
+                    .iter()
+                    .filter(|id| !existing_result_ids.contains(id))
+                    .cloned()
+                    .collect();
+
+                if !missing.is_empty() {
+                    if let Some(next_msg) = next {
+                        if next_msg.role == "user" {
+                            // Append missing tool_results to the existing user message
+                            i += 1;
+                            let mut blocks = match &next_msg.content {
+                                LlmContent::Blocks(b) => b.clone(),
+                                LlmContent::Text(t) => vec![ContentBlock::Text { text: t.clone() }],
+                            };
+                            for id in &missing {
+                                blocks.push(ContentBlock::ToolResult {
+                                    tool_use_id: id.clone(),
+                                    content: "[cancelled] Tool execution was interrupted.".to_string(),
+                                    is_error: Some(true),
+                                });
+                            }
+                            healed.push(LlmMessage {
+                                role: "user".to_string(),
+                                content: LlmContent::Blocks(blocks),
+                            });
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    // No next message or next message is not user — inject a new user message
+                    let blocks: Vec<ContentBlock> = missing
+                        .iter()
+                        .map(|id| ContentBlock::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: "[cancelled] Tool execution was interrupted.".to_string(),
+                            is_error: Some(true),
+                        })
+                        .collect();
+                    healed.push(LlmMessage {
+                        role: "user".to_string(),
+                        content: LlmContent::Blocks(blocks),
+                    });
+                }
+            }
+        }
+
+        i += 1;
+    }
+
+    healed
+}
+
+fn extract_tool_use_ids(content: &LlmContent) -> Vec<String> {
+    match content {
+        LlmContent::Blocks(blocks) => blocks.iter().filter_map(|b| {
+            if let ContentBlock::ToolUse { id, .. } = b { Some(id.clone()) } else { None }
+        }).collect(),
+        _ => vec![],
+    }
+}
+
+fn extract_tool_result_ids(content: &LlmContent) -> Vec<String> {
+    match content {
+        LlmContent::Blocks(blocks) => blocks.iter().filter_map(|b| {
+            if let ContentBlock::ToolResult { tool_use_id, .. } = b { Some(tool_use_id.clone()) } else { None }
+        }).collect(),
+        _ => vec![],
+    }
+}

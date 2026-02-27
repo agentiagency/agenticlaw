@@ -44,9 +44,12 @@ impl LlmProvider for AnthropicProvider {
     }
 
     async fn complete_stream(&self, request: LlmRequest) -> LlmResult<LlmStream> {
+        // Heal any orphaned tool_use blocks before sending
+        let healed_messages = crate::types::validate_and_heal_messages(&request.messages);
+
         let body = AnthropicRequest {
             model: request.model.clone(),
-            messages: request.messages.iter().map(|m| AnthropicMessage {
+            messages: healed_messages.iter().map(|m| AnthropicMessage {
                 role: m.role.clone(),
                 content: match &m.content {
                     crate::types::LlmContent::Text(s) => serde_json::json!(s),
