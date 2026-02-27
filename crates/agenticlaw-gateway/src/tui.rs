@@ -47,6 +47,21 @@ impl VimMode {
 }
 
 // ---------------------------------------------------------------------------
+// Spinner
+// ---------------------------------------------------------------------------
+
+pub const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/// Tracks what the agent is currently doing for spinner display.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AgentActivity {
+    Idle,
+    Thinking,
+    Streaming,
+    RunningTool(String),
+}
+
+// ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
 
@@ -69,6 +84,11 @@ pub struct App {
     pub session_id: String,
     pub ctx_path: String,
 
+    // Spinner state
+    pub spinner_tick: usize,
+    pub activity: AgentActivity,
+    pub last_event_at: std::time::Instant,
+
     // Control
     pub should_quit: bool,
 }
@@ -88,7 +108,37 @@ impl App {
             context_max: 128_000,
             session_id: session_id.to_string(),
             ctx_path: ctx_path.to_string(),
+            spinner_tick: 0,
+            activity: AgentActivity::Idle,
+            last_event_at: std::time::Instant::now(),
             should_quit: false,
+        }
+    }
+
+    /// Advance the spinner frame counter. Called every ~100ms.
+    pub fn tick_spinner(&mut self) {
+        if self.agent_running {
+            self.spinner_tick = self.spinner_tick.wrapping_add(1);
+        }
+    }
+
+    pub fn spinner_char(&self) -> char {
+        SPINNER_FRAMES[self.spinner_tick % SPINNER_FRAMES.len()]
+    }
+
+    pub fn activity_label(&self) -> String {
+        if !self.agent_running {
+            return String::new();
+        }
+        let elapsed = self.last_event_at.elapsed();
+        if elapsed.as_secs() >= 30 {
+            return format!("⚠ agent unresponsive ({}s)", elapsed.as_secs());
+        }
+        match &self.activity {
+            AgentActivity::Idle => String::new(),
+            AgentActivity::Thinking => "thinking...".to_string(),
+            AgentActivity::Streaming => "streaming...".to_string(),
+            AgentActivity::RunningTool(name) => format!("running {}...", name),
         }
     }
 
@@ -523,6 +573,19 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Color::Green
     };
 
+    // Spinner (shown when agent is running)
+    let spinner_span = if app.agent_running {
+        let label = app.activity_label();
+        let warn = label.starts_with('⚠');
+        let color = if warn { Color::Red } else { Color::Yellow };
+        Span::styled(
+            format!(" {} {} ", app.spinner_char(), label),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("")
+    };
+
     // Build status line as a gauge-like bar
     let mode_span = Span::styled(
         format!(" {} ", app.mode.label()),
@@ -535,6 +598,10 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", app.model),
         Style::default().fg(Color::White).bg(Color::DarkGray),
     );
+    let version_span = Span::styled(
+        format!(" v{} ", env!("CARGO_PKG_VERSION")),
+        Style::default().fg(Color::DarkGray).bg(Color::Black),
+    );
     let session_span = Span::styled(
         format!(" {} ", app.session_id),
         Style::default().fg(Color::Gray).bg(Color::Black),
@@ -542,7 +609,12 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 
     // Context bar
     let bar_width = area.width.saturating_sub(
-        mode_span.width() as u16 + model_span.width() as u16 + session_span.width() as u16 + 12,
+        mode_span.width() as u16
+            + model_span.width() as u16
+            + version_span.width() as u16
+            + session_span.width() as u16
+            + spinner_span.width() as u16
+            + 12,
     ) as usize;
     let filled = (bar_width as f64 * ctx_pct as f64 / 100.0) as usize;
     let empty = bar_width.saturating_sub(filled);
@@ -552,7 +624,14 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(ctx_color),
     );
 
-    let status_line = Line::from(vec![mode_span, model_span, session_span, ctx_span]);
+    let status_line = Line::from(vec![
+        mode_span,
+        spinner_span,
+        model_span,
+        version_span,
+        session_span,
+        ctx_span,
+    ]);
     let paragraph = Paragraph::new(status_line);
     frame.render_widget(paragraph, area);
 }
@@ -676,7 +755,14 @@ async fn run_event_loop(
     agent_event_tx: mpsc::Sender<AgentEvent>,
     abort_tx: watch::Sender<bool>,
 ) -> anyhow::Result<()> {
+    let mut render_count: u64 = 0;
+
     loop {
+        render_count = render_count.wrapping_add(1);
+        if render_count.is_multiple_of(6) {
+            app.tick_spinner();
+        }
+
         // Draw
         terminal.draw(|f| draw(f, app))?;
 
@@ -690,6 +776,7 @@ async fn run_event_loop(
                 if key.code == KeyCode::Esc && app.mode == VimMode::Normal && app.agent_running {
                     let _ = abort_tx.send(true);
                     app.agent_running = false;
+                    app.activity = AgentActivity::Idle;
                     app.push_output("\n[cancelled]\n");
                     continue;
                 }
@@ -697,6 +784,8 @@ async fn run_event_loop(
                 if let Some(message) = handle_key(app, key) {
                     // Send message to agent
                     app.agent_running = true;
+                    app.activity = AgentActivity::Thinking;
+                    app.last_event_at = std::time::Instant::now();
                     let rt = runtime.clone();
                     let sk = session_key.clone();
                     let tx = agent_event_tx.clone();
@@ -733,13 +822,21 @@ async fn run_event_loop(
 
         // Drain agent events
         while let Ok(event) = agent_event_rx.try_recv() {
+            app.last_event_at = std::time::Instant::now();
             match event {
-                AgentEvent::Text(text) => app.push_output(&text),
-                AgentEvent::Thinking(_) => {} // hide
+                AgentEvent::Text(text) => {
+                    app.activity = AgentActivity::Streaming;
+                    app.push_output(&text);
+                }
+                AgentEvent::Thinking(_) => {
+                    app.activity = AgentActivity::Thinking;
+                }
                 AgentEvent::ToolCallStart { name, .. } => {
+                    app.activity = AgentActivity::RunningTool(name.clone());
                     app.push_output(&format!("\n[tool:{}]\n", name));
                 }
                 AgentEvent::ToolExecuting { name, .. } => {
+                    app.activity = AgentActivity::RunningTool(name.clone());
                     app.push_output(&format!("  executing {}...", name));
                 }
                 AgentEvent::ToolResult {
@@ -757,6 +854,7 @@ async fn run_event_loop(
                 AgentEvent::Done { .. } => {
                     app.push_output("\n");
                     app.agent_running = false;
+                    app.activity = AgentActivity::Idle;
                     // Update context usage
                     if let Some(sess) = runtime.sessions().get(&session_key) {
                         app.context_used = sess.token_count().await;
@@ -765,6 +863,7 @@ async fn run_event_loop(
                 AgentEvent::Error(e) => {
                     app.push_output(&format!("\nError: {}\n", e));
                     app.agent_running = false;
+                    app.activity = AgentActivity::Idle;
                 }
                 _ => {}
             }
@@ -772,4 +871,80 @@ async fn run_event_loop(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spinner_frames_cycle() {
+        let mut app = App::new("test-model", "test-session", "/tmp/test.ctx");
+        app.agent_running = true;
+
+        assert_eq!(app.spinner_char(), SPINNER_FRAMES[0]);
+
+        for i in 0..SPINNER_FRAMES.len() {
+            app.spinner_tick = i;
+            assert_eq!(app.spinner_char(), SPINNER_FRAMES[i]);
+        }
+
+        app.spinner_tick = SPINNER_FRAMES.len();
+        assert_eq!(app.spinner_char(), SPINNER_FRAMES[0]);
+    }
+
+    #[test]
+    fn activity_label_changes() {
+        let mut app = App::new("test-model", "test-session", "/tmp/test.ctx");
+        app.agent_running = true;
+
+        app.activity = AgentActivity::Thinking;
+        assert_eq!(app.activity_label(), "thinking...");
+
+        app.activity = AgentActivity::Streaming;
+        assert_eq!(app.activity_label(), "streaming...");
+
+        app.activity = AgentActivity::RunningTool("bash".to_string());
+        assert_eq!(app.activity_label(), "running bash...");
+
+        app.agent_running = false;
+        assert_eq!(app.activity_label(), "");
+    }
+
+    #[test]
+    fn unresponsive_warning_after_30s() {
+        let mut app = App::new("test-model", "test-session", "/tmp/test.ctx");
+        app.agent_running = true;
+        app.activity = AgentActivity::Thinking;
+        app.last_event_at = std::time::Instant::now() - std::time::Duration::from_secs(31);
+        let label = app.activity_label();
+        assert!(
+            label.contains('\u{26a0}'),
+            "Expected warning, got: {}",
+            label
+        );
+        assert!(
+            label.contains("unresponsive"),
+            "Expected unresponsive, got: {}",
+            label
+        );
+    }
+
+    #[test]
+    fn tick_spinner_only_when_running() {
+        let mut app = App::new("test-model", "test-session", "/tmp/test.ctx");
+        assert_eq!(app.spinner_tick, 0);
+
+        app.agent_running = false;
+        app.tick_spinner();
+        assert_eq!(app.spinner_tick, 0);
+
+        app.agent_running = true;
+        app.tick_spinner();
+        assert_eq!(app.spinner_tick, 1);
+    }
 }
