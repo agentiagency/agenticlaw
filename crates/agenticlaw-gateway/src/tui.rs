@@ -497,14 +497,31 @@ fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
         .title(format!(" {} ", mode_label))
         .border_style(Style::default().fg(app.mode.color()));
 
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 
-    // Place cursor
-    let cx = area.x + 1 + app.cursor_col as u16;
-    let cy = area.y + 1 + app.cursor_row as u16;
-    if cx < area.x + area.width - 1 && cy < area.y + area.height - 1 {
-        frame.set_cursor_position((cx, cy));
+    // Place cursor — account for soft-wrapped lines
+    let inner_width = area.width.saturating_sub(2) as usize; // subtract borders
+    if inner_width > 0 {
+        let mut visual_row: usize = 0;
+        for r in 0..app.cursor_row {
+            let char_len = app.editor_lines[r].chars().count();
+            visual_row += if char_len == 0 {
+                1
+            } else {
+                char_len.div_ceil(inner_width)
+            };
+        }
+        visual_row += app.cursor_col / inner_width;
+        let visual_col = app.cursor_col % inner_width;
+
+        let cx = area.x + 1 + visual_col as u16;
+        let cy = area.y + 1 + visual_row as u16;
+        if cx < area.x + area.width - 1 && cy < area.y + area.height - 1 {
+            frame.set_cursor_position((cx, cy));
+        }
     }
 }
 
@@ -540,9 +557,22 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::Gray).bg(Color::Black),
     );
 
+    let hint_span = Span::styled(
+        if app.mode == VimMode::Normal {
+            " q:quit "
+        } else {
+            " Esc→Normal "
+        },
+        Style::default().fg(Color::DarkGray),
+    );
+
     // Context bar
     let bar_width = area.width.saturating_sub(
-        mode_span.width() as u16 + model_span.width() as u16 + session_span.width() as u16 + 12,
+        mode_span.width() as u16
+            + model_span.width() as u16
+            + session_span.width() as u16
+            + hint_span.width() as u16
+            + 12,
     ) as usize;
     let filled = (bar_width as f64 * ctx_pct as f64 / 100.0) as usize;
     let empty = bar_width.saturating_sub(filled);
@@ -552,7 +582,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(ctx_color),
     );
 
-    let status_line = Line::from(vec![mode_span, model_span, session_span, ctx_span]);
+    let status_line = Line::from(vec![
+        mode_span,
+        model_span,
+        session_span,
+        ctx_span,
+        hint_span,
+    ]);
     let paragraph = Paragraph::new(status_line);
     frame.render_widget(paragraph, area);
 }
