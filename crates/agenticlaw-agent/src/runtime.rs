@@ -260,17 +260,9 @@ impl AgentRuntime {
             }
 
             if tool_calls.is_empty() {
-                info!(stop_reason = %stop_reason, text_len = text_content.len(), "API response complete (no tool calls)");
                 let _ = event_tx.send(AgentEvent::Done { stop_reason }).await;
                 break;
             }
-
-            info!(
-                stop_reason = %stop_reason,
-                tool_count = tool_calls.len(),
-                tools = %tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(","),
-                "API response complete"
-            );
 
             // Execute tools concurrently — results get persisted to .ctx via session.add_tool_result
             // Emit ToolExecuting for all tools before launching
@@ -289,25 +281,8 @@ impl AgentRuntime {
                 .map(|tc| {
                     let tools = self.tools.clone();
                     let name = tc.name.clone();
-                    let id = tc.id.clone();
                     let args = tc.parse_arguments().unwrap_or_default();
-                    let args_summary = args.as_object()
-                        .and_then(|o| o.iter().next())
-                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(&v.to_string()).chars().take(80).collect::<String>()))
-                        .unwrap_or_default();
-                    async move {
-                        let start = std::time::Instant::now();
-                        info!(tool = %name, id = %id, args = %args_summary, "Tool executing");
-                        let result = tools.execute(&name, args).await;
-                        let duration = start.elapsed();
-                        let result_size = result.to_content_string().len();
-                        if result.is_error() {
-                            warn!(tool = %name, id = %id, duration_ms = duration.as_millis() as u64, result_size, "Tool failed");
-                        } else {
-                            info!(tool = %name, id = %id, duration_ms = duration.as_millis() as u64, result_size, "Tool completed");
-                        }
-                        result
-                    }
+                    async move { tools.execute(&name, args).await }
                 })
                 .collect();
 
@@ -337,14 +312,19 @@ impl AgentRuntime {
                 session.add_tool_result(&tc.id, &result_str, is_error).await;
             }
 
-            debug!(iteration = iterations, "Tool calls executed, continuing loop");
+            debug!(
+                "Tool calls executed, continuing loop (iteration {})",
+                iterations
+            );
         }
 
-        let msg_count = session.message_count().await;
-        let token_count = session.token_count().await;
-        info!(messages = msg_count, tokens = token_count, "Turn complete");
+        info!(
+            "Turn complete: session={}, messages={}, tokens≈{}",
+            session_key,
+            session.message_count().await,
+            session.token_count().await
+        );
         Ok(())
-        }.instrument(turn_span).await
     }
 }
 
