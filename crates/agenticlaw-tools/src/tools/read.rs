@@ -29,7 +29,22 @@ impl ReadTool {
             self.workspace_root.join(p)
         };
         // Resolve symlinks if the file exists, otherwise use the path as-is
-        let resolved = expanded.canonicalize().unwrap_or(expanded);
+        let resolved = expanded.canonicalize().unwrap_or(expanded.clone());
+
+        // Security: block path traversal outside workspace for relative paths
+        if !p.is_absolute() && !path.starts_with("~/") {
+            let ws_canonical = self
+                .workspace_root
+                .canonicalize()
+                .unwrap_or_else(|_| self.workspace_root.clone());
+            if !resolved.starts_with(&ws_canonical) {
+                return Err(format!(
+                    "Path escape blocked: '{}' resolves outside workspace",
+                    path
+                ));
+            }
+        }
+
         Ok(resolved)
     }
 }
