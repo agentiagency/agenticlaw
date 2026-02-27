@@ -669,34 +669,22 @@ pub async fn run_tui(
     // --resume without --session resumes the latest session.
     // Only creates a new session if no existing .ctx is found.
     let (session_key, ctx_path) = if let Some(ref name) = session_name {
-        // Named session: stable path <name>.ctx — always the same file.
-        // Also checks for legacy timestamped files (YYYYMMDD-HHMMSS-<name>.ctx).
-        let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
+        // Named session: always resume the LATEST .ctx for this name.
+        // .ctx files are timestamped (YYYYMMDD-HHMMSS-<name>.ctx) so sessions
+        // can roll over on sleep. find_by_id returns the most recent one.
         let key = SessionKey::new(name);
-        if ctx_path.exists() {
-            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx_path)?;
+        if let Some(latest) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
+            // Resume from the latest .ctx for this session
+            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&latest)?;
             runtime.sessions().resume_from_ctx(&resumed);
-            tracing::info!("Resumed session '{}' from {}", name, ctx_path.display());
-        } else if let Some(legacy) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
-            // Found a legacy timestamped file — resume from it and rename to stable path
-            tracing::info!(
-                "Migrating legacy session '{}': {} → {}",
-                name,
-                legacy.display(),
-                ctx_path.display()
-            );
-            if let Err(e) = std::fs::rename(&legacy, &ctx_path) {
-                tracing::warn!("Failed to rename legacy .ctx: {}, resuming in place", e);
-                let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&legacy)?;
-                runtime.sessions().resume_from_ctx(&resumed);
-            } else {
-                let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx_path)?;
-                runtime.sessions().resume_from_ctx(&resumed);
-            }
+            tracing::info!("Resumed session '{}' from {}", name, latest.display());
+            (key, latest)
         } else {
+            // First ever run — create new timestamped .ctx
+            let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
             tracing::info!("Creating new session '{}'", name);
+            (key, ctx_path)
         }
-        (key, ctx_path)
     } else if resume {
         // --resume without --session: resume latest
         let ctx = agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {

@@ -159,11 +159,13 @@ fn sessions_dir(workspace: &Path) -> PathBuf {
     }
 }
 
-/// Generate the .ctx file path for a session within a workspace.
-/// Format: <workspace>/[.agenticlaw/]sessions/<session_id>.ctx
-/// Stable, deterministic — same name always resumes the same file.
+/// Generate a NEW .ctx file path for a session within a workspace.
+/// Format: <workspace>/[.agenticlaw/]sessions/<YYYYMMDD-HHMMSS>-<session_id>.ctx
+/// Timestamped so sessions can roll over (sleep creates a new .ctx, seeded by subconscious).
+/// To resume, use `find_by_id()` which finds the latest .ctx for a given session name.
 pub fn session_ctx_path(workspace: &Path, session_id: &str) -> PathBuf {
-    sessions_dir(workspace).join(format!("{}.ctx", session_id))
+    let now = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    sessions_dir(workspace).join(format!("{}-{}.ctx", now, session_id))
 }
 
 /// Find the latest .ctx file in a workspace's session directory.
