@@ -410,13 +410,12 @@ fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.output_lines.len();
+    let visible_height = area.height.saturating_sub(2) as usize; // subtract borders
+    let inner_width = area.width.saturating_sub(2) as usize; // subtract borders
 
-    let end = app.output_scroll.min(total);
-    let start = end.saturating_sub(visible_height);
-
-    let lines: Vec<Line> = app.output_lines[start..end]
+    // Convert all output lines to styled Lines
+    let all_lines: Vec<Line> = app
+        .output_lines
         .iter()
         .map(|l| {
             if l.starts_with("> ") {
@@ -430,6 +429,10 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             }
         })
         .collect();
+
+    // When auto-scrolled (output_scroll == total), use scroll offset to pin to bottom.
+    // Calculate total visual lines accounting for wrapping.
+    let at_bottom = app.output_scroll >= app.output_lines.len();
 
     let title = if app.agent_running {
         " Output [running...] "
@@ -445,11 +448,40 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             Color::DarkGray
         }));
 
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
+    if at_bottom && inner_width > 0 {
+        // Count total visual lines after wrapping
+        let total_visual: usize = all_lines
+            .iter()
+            .map(|l| {
+                let w = l.width();
+                if w == 0 {
+                    1
+                } else {
+                    w.div_ceil(inner_width)
+                }
+            })
+            .sum();
 
-    frame.render_widget(paragraph, area);
+        let scroll_offset = total_visual.saturating_sub(visible_height) as u16;
+
+        let paragraph = Paragraph::new(all_lines)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll_offset, 0));
+
+        frame.render_widget(paragraph, area);
+    } else {
+        // Manual scroll position: show from output_scroll backward
+        let end = app.output_scroll.min(app.output_lines.len());
+        let start = end.saturating_sub(visible_height);
+        let visible: Vec<Line> = all_lines[start..end].to_vec();
+
+        let paragraph = Paragraph::new(visible)
+            .block(block)
+            .wrap(Wrap { trim: false });
+
+        frame.render_widget(paragraph, area);
+    }
 }
 
 fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
