@@ -127,16 +127,27 @@ pub fn discover_preload_files(workspace: &Path) -> Vec<String> {
     contents
 }
 
+/// Resolve the sessions directory within a workspace.
+/// If workspace already ends with `.agenticlaw`, use `sessions/` directly.
+/// Otherwise, nest under `.agenticlaw/sessions/`.
+fn sessions_dir(workspace: &Path) -> PathBuf {
+    if workspace.ends_with(".agenticlaw") {
+        workspace.join("sessions")
+    } else {
+        workspace.join(".agenticlaw").join("sessions")
+    }
+}
+
 /// Generate the .ctx file path for a session within a workspace.
-/// Format: <workspace>/.agenticlaw/sessions/<YYYYMMDD-HHMMSS>-<session_id>.ctx
+/// Format: <workspace>/[.agenticlaw/]sessions/<YYYYMMDD-HHMMSS>-<session_id>.ctx
 pub fn session_ctx_path(workspace: &Path, session_id: &str) -> PathBuf {
     let now = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    workspace.join(".agenticlaw").join("sessions").join(format!("{}-{}.ctx", now, session_id))
+    sessions_dir(workspace).join(format!("{}-{}.ctx", now, session_id))
 }
 
 /// Find the latest .ctx file in a workspace's session directory.
 pub fn find_latest(workspace: &Path) -> Option<PathBuf> {
-    let sessions_dir = workspace.join(".agenticlaw").join("sessions");
+    let sessions_dir = sessions_dir(workspace);
     if !sessions_dir.is_dir() { return None; }
 
     let mut ctx_files: Vec<PathBuf> = fs::read_dir(&sessions_dir)
@@ -154,7 +165,7 @@ pub fn find_latest(workspace: &Path) -> Option<PathBuf> {
 /// Find a .ctx file by session ID. Files are named `YYYYMMDD-HHMMSS-<session_id>.ctx`,
 /// so we match on the suffix. Returns the most recent match if multiple exist.
 pub fn find_by_id(workspace: &Path, session_id: &str) -> Option<PathBuf> {
-    let sessions_dir = workspace.join(".agenticlaw").join("sessions");
+    let sessions_dir = sessions_dir(workspace);
     if !sessions_dir.is_dir() { return None; }
 
     let suffix = format!("-{}.ctx", session_id);
