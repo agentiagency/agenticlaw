@@ -1,0 +1,34 @@
+[package]
+name = "agenticlaw-consciousness"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "agenticlaw-consciousness"
+path = "src/main.rs"
+
+[dependencies]
+agenticlaw-core = { path = "../agenticlaw-core" }
+agenticlaw-llm = { path = "../agenticlaw-llm" }
+agenticlaw-tools = { path = "../agenticlaw-tools" }
+agenticlaw-agent = { path = "../agenticlaw-agent" }
+agenticlaw-gateway = { path = "../agenticlaw-gateway" }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+chrono = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"

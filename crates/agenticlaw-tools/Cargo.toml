@@ -1,0 +1,21 @@
+[package]
+name = "agenticlaw-tools"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+agenticlaw-core = { path = "../agenticlaw-core" }
+agenticlaw-llm = { path = "../agenticlaw-llm" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+globset = { workspace = true }
+walkdir = { workspace = true }
+regex = { workspace = true }
+tokio-util = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"

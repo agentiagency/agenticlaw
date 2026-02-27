@@ -1,0 +1,57 @@
+[package]
+name = "agenticlaw"
+type = "runtime"
+description = "Rustclaw AI agent runtime — openclaw in Rust with integrated consciousness"
+version = "0.2.0"
+tier = "Core"
+source = "AGENTISYNC"
+layer = 0
+
+[provides]
+capabilities = [
+    "runtime.agenticlaw",
+    "runtime.gateway",
+    "runtime.consciousness",
+    "agent.chat",
+    "agent.tools",
+    "agent.sessions",
+    "agent.spawn",
+    "ws.json-rpc-v3",
+    "ws.legacy-v2",
+    "ctx.persistence",
+    "consciousness.dual-core",
+    "consciousness.ego-distill",
+    "consciousness.injection",
+    "consciousness.sleep-wake",
+]
+
+[requires]
+capabilities = [
+    "runtime.rust",
+]
+
+conflicts = []
+
+[sacred]
+health = "/health"
+surface = "/surface"
+plan = "/plan"
+test = "/test"
+hints = "/hints"
+
+[binary]
+path = "agenticlaw"
+install_to = "~/agentibin/agenticlaw"
+build_cmd = "cd ~/agentiagency/agenticlaw && cargo build --release --bin agenticlaw"
+source = "~/agentiagency/agenticlaw/target/release/agenticlaw"
+
+[ports]
+gateway = 18789
+l1 = 18791
+l2 = 18792
+l3 = 18793
+core_a = 18794
+core_b = 18795
+
+[hooks]
+test = "curl -sf http://localhost:18789/health"

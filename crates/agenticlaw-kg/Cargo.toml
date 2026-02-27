@@ -1,0 +1,27 @@
+[package]
+name = "agenticlaw-kg"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "agenticlaw-kg"
+path = "src/main.rs"
+
+[dependencies]
+agenticlaw-agent = { path = "../agenticlaw-agent" }
+agenticlaw-llm = { path = "../agenticlaw-llm" }
+agenticlaw-tools = { path = "../agenticlaw-tools" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+dirs = "5"
+tempfile = "3"

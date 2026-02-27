@@ -1,0 +1,23 @@
+[package]
+name = "agenticlaw-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+agenticlaw-core = { path = "../agenticlaw-core" }
+agenticlaw-llm = { path = "../agenticlaw-llm" }
+agenticlaw-tools = { path = "../agenticlaw-tools" }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dashmap = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tokio-util = { workspace = true }

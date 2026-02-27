@@ -1,0 +1,38 @@
+[package]
+name = "agenticlaw-gateway"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "agenticlaw-gw"
+path = "src/main.rs"
+
+[dependencies]
+agenticlaw-core = { path = "../agenticlaw-core" }
+agenticlaw-llm = { path = "../agenticlaw-llm" }
+agenticlaw-tools = { path = "../agenticlaw-tools" }
+agenticlaw-agent = { path = "../agenticlaw-agent" }
+
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+uuid = { workspace = true }
+dashmap = { workspace = true }
+bytes = { workspace = true }
+async-stream = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio-util = { workspace = true }
