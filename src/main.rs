@@ -18,7 +18,10 @@ use clap::Parser;
 use format::FormatOptions;
 
 #[derive(Parser)]
-#[command(name = "agenticlaw", about = "Native .ctx agent context files — reads .ctx and .jsonl")]
+#[command(
+    name = "agenticlaw",
+    about = "Native .ctx agent context files — reads .ctx and .jsonl"
+)]
 struct Cli {
     /// Path to a .ctx/.jsonl file or directory
     path: Option<String>,
@@ -99,7 +102,14 @@ fn main() {
             include_usage: cli.include_usage,
             raw: cli.raw,
         };
-        watch_loop(path, Path::new(out_dir), &opts, &emit_opts, cli.ctx, cli.wire);
+        watch_loop(
+            path,
+            Path::new(out_dir),
+            &opts,
+            &emit_opts,
+            cli.ctx,
+            cli.wire,
+        );
         return;
     }
 
@@ -119,7 +129,13 @@ fn main() {
         match process_file(file, &opts, &emit_opts, cli.ctx, cli.wire) {
             Ok(output_text) => {
                 if let Some(ref out_dir) = cli.output {
-                    let ext = if cli.ctx { "ctx" } else if cli.wire { "jsonl" } else { "txt" };
+                    let ext = if cli.ctx {
+                        "ctx"
+                    } else if cli.wire {
+                        "jsonl"
+                    } else {
+                        "txt"
+                    };
                     write_output(file, &output_text, Path::new(out_dir), ext);
                 } else {
                     print!("{}", output_text);
@@ -143,9 +159,22 @@ fn write_output(file: &Path, content: &str, out_path: &Path, ext: &str) {
     eprintln!("Wrote: {}", out_file.display());
 }
 
-fn watch_loop(dir: &Path, out_dir: &Path, format_opts: &FormatOptions, emit_opts: &context::EmitOptions, output_ctx: bool, output_wire: bool) {
+fn watch_loop(
+    dir: &Path,
+    out_dir: &Path,
+    format_opts: &FormatOptions,
+    emit_opts: &context::EmitOptions,
+    output_ctx: bool,
+    output_wire: bool,
+) {
     let mut seen: HashMap<PathBuf, SystemTime> = HashMap::new();
-    let ext = if output_ctx { "ctx" } else if output_wire { "jsonl" } else { "txt" };
+    let ext = if output_ctx {
+        "ctx"
+    } else if output_wire {
+        "jsonl"
+    } else {
+        "txt"
+    };
     eprintln!("Watching {} for changes (Ctrl-C to stop)...", dir.display());
 
     // Initial pass
@@ -220,7 +249,12 @@ fn process_file(
     if is_ctx {
         let session = context::CleanContextSession::from_file(path)?;
         for err in &session.parse_errors {
-            eprintln!("  Warning: {}:{}: {}", path.display(), err.line, err.message);
+            eprintln!(
+                "  Warning: {}:{}: {}",
+                path.display(),
+                err.line,
+                err.message
+            );
         }
         if output_wire {
             Ok(context::to_wire(session.events()))
@@ -233,7 +267,12 @@ fn process_file(
     } else {
         let session = openclaw::OpenclawSession::from_jsonl(path)?;
         for err in &session.parse_errors {
-            eprintln!("  Warning: {}:{}: {}", path.display(), err.line, err.message);
+            eprintln!(
+                "  Warning: {}:{}: {}",
+                path.display(),
+                err.line,
+                err.message
+            );
         }
         if output_ctx {
             Ok(context::emit(session.events(), emit_opts))

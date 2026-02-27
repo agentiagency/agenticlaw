@@ -9,8 +9,11 @@ pub mod persistent;
 pub mod registry;
 pub mod resource;
 
-pub use executor::{Executor, RunConfig, NodePrep};
-pub use manifest::{RunManifest, Outcome, NodeState};
+pub use executor::{Executor, NodePrep, RunConfig};
+pub use manifest::{NodeState, Outcome, RunManifest};
 pub use persistent::{IssueNode, PrNode};
-pub use registry::{NodeTypeRegistry, NodeType, OperatorRole, TemplateVars, default_issue_registry, render_template_pub};
-pub use resource::{GraphAddress, ResourceDriver, LocalFsDriver, KgEvent, Artifact};
+pub use registry::{
+    default_issue_registry, render_template_pub, NodeType, NodeTypeRegistry, OperatorRole,
+    TemplateVars,
+};
+pub use resource::{Artifact, GraphAddress, KgEvent, LocalFsDriver, ResourceDriver};

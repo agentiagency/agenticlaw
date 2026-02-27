@@ -4,8 +4,8 @@
 //! Today: local filesystem. Tomorrow: S3, Loki, database.
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
+use std::path::{Path, PathBuf};
 
 /// Abstract resource address in the KG execution tree.
 /// e.g. "/root/issue/183/analysis"
@@ -13,9 +13,15 @@ use chrono::{DateTime, Utc};
 pub struct GraphAddress(pub String);
 
 impl GraphAddress {
-    pub fn root() -> Self { Self("/root".into()) }
-    pub fn child(&self, segment: &str) -> Self { Self(format!("{}/{}", self.0, segment)) }
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn root() -> Self {
+        Self("/root".into())
+    }
+    pub fn child(&self, segment: &str) -> Self {
+        Self(format!("{}/{}", self.0, segment))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for GraphAddress {
@@ -36,16 +42,16 @@ pub struct KgEvent {
 
 /// Artifact types written by the executor scaffolding (not the agent).
 pub enum Artifact {
-    Prompt,       // prompt.md — task given to agent
-    Fear,         // fear.md — constraints/warnings
-    Ego,          // ego.md — context snapshot
-    Context,      // context.md — files read for scoping
-    Output,       // output.md — agent's result
-    Transcript,   // ctx.jsonl — full session transcript
-    Decision,     // decision.md — gate approve/reject
-    Metrics,      // metrics.yaml — tokens, wall_ms, outcome
-    Manifest,     // manifest.yaml — run metadata
-    Report,       // report.md — final summary
+    Prompt,     // prompt.md — task given to agent
+    Fear,       // fear.md — constraints/warnings
+    Ego,        // ego.md — context snapshot
+    Context,    // context.md — files read for scoping
+    Output,     // output.md — agent's result
+    Transcript, // ctx.jsonl — full session transcript
+    Decision,   // decision.md — gate approve/reject
+    Metrics,    // metrics.yaml — tokens, wall_ms, outcome
+    Manifest,   // manifest.yaml — run metadata
+    Report,     // report.md — final summary
 }
 
 impl Artifact {
@@ -69,10 +75,21 @@ impl Artifact {
 #[async_trait::async_trait]
 pub trait ResourceDriver: Send + Sync {
     /// Write an artifact at a graph address.
-    async fn write_artifact(&self, run_id: &str, addr: &GraphAddress, artifact: Artifact, content: &[u8]) -> Result<()>;
+    async fn write_artifact(
+        &self,
+        run_id: &str,
+        addr: &GraphAddress,
+        artifact: Artifact,
+        content: &[u8],
+    ) -> Result<()>;
 
     /// Read an artifact back.
-    async fn read_artifact(&self, run_id: &str, addr: &GraphAddress, artifact: Artifact) -> Result<Vec<u8>>;
+    async fn read_artifact(
+        &self,
+        run_id: &str,
+        addr: &GraphAddress,
+        artifact: Artifact,
+    ) -> Result<Vec<u8>>;
 
     /// Emit a structured event (for ctx.jsonl / Loki).
     async fn emit_event(&self, run_id: &str, event: KgEvent) -> Result<()>;
@@ -88,20 +105,31 @@ pub struct LocalFsDriver {
 
 impl LocalFsDriver {
     pub fn new(base_dir: impl AsRef<Path>) -> Self {
-        Self { base_dir: base_dir.as_ref().to_path_buf() }
+        Self {
+            base_dir: base_dir.as_ref().to_path_buf(),
+        }
     }
 
     fn artifact_path(&self, run_id: &str, addr: &GraphAddress, artifact: &Artifact) -> PathBuf {
         // /root/issue/183/analysis → issue-183/analysis/
         let rel = addr.0.trim_start_matches("/root").trim_start_matches('/');
         let rel = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
-        self.base_dir.join(run_id).join(if rel.is_empty() { "root" } else { &rel }).join(artifact.filename())
+        self.base_dir
+            .join(run_id)
+            .join(if rel.is_empty() { "root" } else { &rel })
+            .join(artifact.filename())
     }
 }
 
 #[async_trait::async_trait]
 impl ResourceDriver for LocalFsDriver {
-    async fn write_artifact(&self, run_id: &str, addr: &GraphAddress, artifact: Artifact, content: &[u8]) -> Result<()> {
+    async fn write_artifact(
+        &self,
+        run_id: &str,
+        addr: &GraphAddress,
+        artifact: Artifact,
+        content: &[u8],
+    ) -> Result<()> {
         let path = self.artifact_path(run_id, addr, &artifact);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -111,13 +139,22 @@ impl ResourceDriver for LocalFsDriver {
         Ok(())
     }
 
-    async fn read_artifact(&self, run_id: &str, addr: &GraphAddress, artifact: Artifact) -> Result<Vec<u8>> {
+    async fn read_artifact(
+        &self,
+        run_id: &str,
+        addr: &GraphAddress,
+        artifact: Artifact,
+    ) -> Result<Vec<u8>> {
         let path = self.artifact_path(run_id, addr, &artifact);
         Ok(tokio::fs::read(&path).await?)
     }
 
     async fn emit_event(&self, run_id: &str, event: KgEvent) -> Result<()> {
-        let path = self.artifact_path(run_id, &GraphAddress(event.graph_address.clone()), &Artifact::Transcript);
+        let path = self.artifact_path(
+            run_id,
+            &GraphAddress(event.graph_address.clone()),
+            &Artifact::Transcript,
+        );
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -126,7 +163,10 @@ impl ResourceDriver for LocalFsDriver {
         // Append mode
         use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::OpenOptions::new()
-            .create(true).append(true).open(&path).await?;
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await?;
         file.write_all(line.as_bytes()).await?;
         Ok(())
     }
@@ -155,8 +195,14 @@ mod tests {
         let driver = LocalFsDriver::new(tmp.path());
         let addr = GraphAddress("/root/issue/42/analysis".into());
 
-        driver.write_artifact("test-run", &addr, Artifact::Prompt, b"hello world").await.unwrap();
-        let read_back = driver.read_artifact("test-run", &addr, Artifact::Prompt).await.unwrap();
+        driver
+            .write_artifact("test-run", &addr, Artifact::Prompt, b"hello world")
+            .await
+            .unwrap();
+        let read_back = driver
+            .read_artifact("test-run", &addr, Artifact::Prompt)
+            .await
+            .unwrap();
         assert_eq!(read_back, b"hello world");
     }
 
@@ -171,11 +217,14 @@ mod tests {
             data: serde_json::json!({"tools": ["bash", "read"]}),
         };
         driver.emit_event("test-run", event).await.unwrap();
-        let content = driver.read_artifact(
-            "test-run",
-            &GraphAddress("/root/issue/42/analysis".into()),
-            Artifact::Transcript,
-        ).await.unwrap();
+        let content = driver
+            .read_artifact(
+                "test-run",
+                &GraphAddress("/root/issue/42/analysis".into()),
+                Artifact::Transcript,
+            )
+            .await
+            .unwrap();
         let line = String::from_utf8(content).unwrap();
         assert!(line.contains("node_spawned"));
     }

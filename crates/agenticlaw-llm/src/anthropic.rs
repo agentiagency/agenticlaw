@@ -33,7 +33,9 @@ impl AnthropicProvider {
 
 #[async_trait::async_trait]
 impl LlmProvider for AnthropicProvider {
-    fn name(&self) -> &str { "anthropic" }
+    fn name(&self) -> &str {
+        "anthropic"
+    }
 
     fn models(&self) -> &[&str] {
         &[
@@ -49,28 +51,37 @@ impl LlmProvider for AnthropicProvider {
 
         let body = AnthropicRequest {
             model: request.model.clone(),
-            messages: healed_messages.iter().map(|m| AnthropicMessage {
-                role: m.role.clone(),
-                content: match &m.content {
-                    crate::types::LlmContent::Text(s) => serde_json::json!(s),
-                    crate::types::LlmContent::Blocks(blocks) => serde_json::to_value(blocks).unwrap_or_default(),
-                },
-            }).collect(),
+            messages: healed_messages
+                .iter()
+                .map(|m| AnthropicMessage {
+                    role: m.role.clone(),
+                    content: match &m.content {
+                        crate::types::LlmContent::Text(s) => serde_json::json!(s),
+                        crate::types::LlmContent::Blocks(blocks) => {
+                            serde_json::to_value(blocks).unwrap_or_default()
+                        }
+                    },
+                })
+                .collect(),
             max_tokens: request.max_tokens.unwrap_or(8192),
             stream: true,
             system: request.system.clone(),
             tools: request.tools.as_ref().map(|tools| {
-                tools.iter().map(|t| AnthropicTool {
-                    name: t.name.clone(),
-                    description: t.description.clone(),
-                    input_schema: t.input_schema.clone(),
-                }).collect()
+                tools
+                    .iter()
+                    .map(|t| AnthropicTool {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        input_schema: t.input_schema.clone(),
+                    })
+                    .collect()
             }),
         };
 
         debug!("Anthropic request: model={}", body.model);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -88,9 +99,14 @@ impl LlmProvider for AnthropicProvider {
             if status.as_u16() == 401 {
                 return Err(LlmError::AuthFailed(error_text));
             } else if status.as_u16() == 429 {
-                return Err(LlmError::RateLimited { retry_after_ms: 60000 });
+                return Err(LlmError::RateLimited {
+                    retry_after_ms: 60000,
+                });
             } else {
-                return Err(LlmError::RequestFailed(format!("{}: {}", status, error_text)));
+                return Err(LlmError::RequestFailed(format!(
+                    "{}: {}",
+                    status, error_text
+                )));
             }
         }
 
@@ -250,6 +266,7 @@ struct ContentBlockDelta {
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
+#[allow(clippy::enum_variant_names)]
 enum DeltaType {
     #[serde(rename = "text_delta")]
     TextDelta { text: String },

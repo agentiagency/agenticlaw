@@ -26,15 +26,7 @@ pub async fn session_exists(name: &str) -> bool {
 }
 
 pub async fn capture_pane(name: &str, lines: u32) -> Result<String, String> {
-    run_tmux(&[
-        "capture-pane",
-        "-t",
-        name,
-        "-p",
-        "-S",
-        &format!("-{lines}"),
-    ])
-    .await
+    run_tmux(&["capture-pane", "-t", name, "-p", "-S", &format!("-{lines}")]).await
 }
 
 pub async fn send_keys(name: &str, keys: &str) -> Result<(), String> {

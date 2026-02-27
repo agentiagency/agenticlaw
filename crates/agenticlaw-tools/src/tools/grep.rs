@@ -13,20 +13,26 @@ pub struct GrepTool {
 
 impl GrepTool {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        Self { workspace_root: workspace_root.as_ref().to_path_buf() }
+        Self {
+            workspace_root: workspace_root.as_ref().to_path_buf(),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Tool for GrepTool {
-    fn name(&self) -> &str { "grep" }
+    fn name(&self) -> &str {
+        "grep"
+    }
 
     fn description(&self) -> &str {
         "Search file contents using regex patterns. Returns matching file paths by default, \
          or matching lines with context. Use glob parameter to filter files."
     }
 
-    fn is_read_only(&self) -> bool { true }
+    fn is_read_only(&self) -> bool {
+        true
+    }
 
     fn input_schema(&self) -> Value {
         json!({
@@ -80,15 +86,26 @@ impl Tool for GrepTool {
             Err(e) => return ToolResult::error(format!("Invalid regex: {}", e)),
         };
 
-        let search_root = args["path"].as_str()
-            .map(|p| if Path::new(p).is_absolute() { PathBuf::from(p) } else { self.workspace_root.join(p) })
+        let search_root = args["path"]
+            .as_str()
+            .map(|p| {
+                if Path::new(p).is_absolute() {
+                    PathBuf::from(p)
+                } else {
+                    self.workspace_root.join(p)
+                }
+            })
             .unwrap_or_else(|| self.workspace_root.clone());
 
         let output_mode = args["output_mode"].as_str().unwrap_or("files_with_matches");
         let context_lines = args["context"].as_u64().unwrap_or(0) as usize;
 
         let file_glob = args["glob"].as_str().and_then(|g| {
-            globset::GlobBuilder::new(g).literal_separator(false).build().ok().map(|g| g.compile_matcher())
+            globset::GlobBuilder::new(g)
+                .literal_separator(false)
+                .build()
+                .ok()
+                .map(|g| g.compile_matcher())
         });
 
         // If searching a single file
@@ -108,18 +125,26 @@ impl Tool for GrepTool {
             })
             .filter_map(|e| e.ok())
         {
-            if !entry.file_type().is_file() { continue; }
+            if !entry.file_type().is_file() {
+                continue;
+            }
 
             // Apply glob filter
             if let Some(ref glob) = file_glob {
                 let name = entry.file_name().to_string_lossy();
-                if !glob.is_match(name.as_ref()) { continue; }
+                if !glob.is_match(name.as_ref()) {
+                    continue;
+                }
             }
 
             // Skip binary files (check first 512 bytes)
             if let Ok(bytes) = std::fs::read(entry.path()) {
-                if bytes.len() > 512 && bytes[..512].contains(&0) { continue; }
-            } else { continue; }
+                if bytes.len() > 512 && bytes[..512].contains(&0) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
 
             let content = match std::fs::read_to_string(entry.path()) {
                 Ok(c) => c,
@@ -144,7 +169,13 @@ impl Tool for GrepTool {
                                 let end = (i + context_lines + 1).min(lines.len());
                                 for j in start..end {
                                     let prefix = if j == i { ">" } else { " " };
-                                    results.push(format!("{}{}:{}:{}", prefix, entry.path().display(), j + 1, lines[j]));
+                                    results.push(format!(
+                                        "{}{}:{}:{}",
+                                        prefix,
+                                        entry.path().display(),
+                                        j + 1,
+                                        lines[j]
+                                    ));
                                 }
                                 if context_lines > 0 && end < lines.len() {
                                     results.push("--".to_string());
@@ -156,7 +187,9 @@ impl Tool for GrepTool {
                 }
             }
 
-            if results.len() > 5000 { break; } // cap output
+            if results.len() > 5000 {
+                break;
+            } // cap output
         }
 
         debug!("grep: '{}' → {} results", pattern_str, results.len());
@@ -193,7 +226,9 @@ fn search_file(path: &Path, regex: &Regex, output_mode: &str, context_lines: usi
                         let prefix = if j == i { ">" } else { " " };
                         results.push(format!("{}{}:{}", prefix, j + 1, lines[j]));
                     }
-                    if context_lines > 0 { results.push("--".to_string()); }
+                    if context_lines > 0 {
+                        results.push("--".to_string());
+                    }
                 }
             }
             ToolResult::text(results.join("\n"))

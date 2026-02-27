@@ -12,7 +12,11 @@ fn default_opts() -> FormatOptions {
 
 fn parse_and_format(jsonl: &str, opts: &FormatOptions) -> String {
     let result = parse_lines(jsonl);
-    assert!(result.errors.is_empty(), "Parse errors: {:?}", result.errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(
+        result.errors.is_empty(),
+        "Parse errors: {:?}",
+        result.errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
     let events = transform(result.records);
     format_session(&events, opts)
 }
@@ -206,8 +210,12 @@ fn version_compat_warning_on_future_version() {
     let jsonl = r#"{"type":"session","version":99,"id":"future","timestamp":"2026-02-07T17:56:16.780Z","cwd":"/tmp"}"#;
     let session = OpenclawSession::from_str(jsonl);
     assert_eq!(session.parse_errors.len(), 1);
-    assert!(session.parse_errors[0].message.contains("format version 99"));
-    assert!(session.parse_errors[0].message.contains("Upgrade agenticlaw"));
+    assert!(session.parse_errors[0]
+        .message
+        .contains("format version 99"));
+    assert!(session.parse_errors[0]
+        .message
+        .contains("Upgrade agenticlaw"));
 }
 
 #[test]
@@ -336,7 +344,13 @@ fn context_emit_thinking_excluded_by_default() {
 
 #[test]
 fn context_emit_thinking_included_with_flag() {
-    let ctx = jsonl_to_context(sample_jsonl(), &EmitOptions { include_thinking: true, ..Default::default() });
+    let ctx = jsonl_to_context(
+        sample_jsonl(),
+        &EmitOptions {
+            include_thinking: true,
+            ..Default::default()
+        },
+    );
     assert!(ctx.contains("[thinking] I need to read the config file first."));
 }
 
@@ -348,7 +362,13 @@ fn context_emit_usage_excluded_by_default() {
 
 #[test]
 fn context_emit_usage_included_with_flag() {
-    let ctx = jsonl_to_context(sample_jsonl(), &EmitOptions { include_usage: true, ..Default::default() });
+    let ctx = jsonl_to_context(
+        sample_jsonl(),
+        &EmitOptions {
+            include_usage: true,
+            ..Default::default()
+        },
+    );
     assert!(ctx.contains("[tokens: 100 in, 50 out, 200 cached, 350 total]"));
 }
 
@@ -356,8 +376,15 @@ fn context_emit_usage_included_with_flag() {
 fn context_emit_datetime_separators() {
     let ctx = jsonl_to_context(sample_jsonl(), &EmitOptions::default());
     // Each turn should have a --- <timestamp> --- separator
-    let separator_count = ctx.lines().filter(|l| l.starts_with("--- 2026-") && l.ends_with(" ---")).count();
-    assert!(separator_count >= 2, "Expected at least 2 datetime separators, got {}", separator_count);
+    let separator_count = ctx
+        .lines()
+        .filter(|l| l.starts_with("--- 2026-") && l.ends_with(" ---"))
+        .count();
+    assert!(
+        separator_count >= 2,
+        "Expected at least 2 datetime separators, got {}",
+        separator_count
+    );
 }
 
 #[test]
@@ -374,11 +401,15 @@ fn context_emit_no_json() {
 
 #[test]
 fn context_parse_session_header() {
-    let ctx = "--- session: my-session-id ---\nstarted: 2026-02-16T10:00:00.000Z\ncwd: /home/agent\n\n";
+    let ctx =
+        "--- session: my-session-id ---\nstarted: 2026-02-16T10:00:00.000Z\ncwd: /home/agent\n\n";
     let result = context::parse(ctx);
     assert!(result.errors.is_empty());
     assert_eq!(result.events.len(), 1);
-    if let crate::transform::SessionEvent::Header { id, timestamp, cwd, .. } = &result.events[0] {
+    if let crate::transform::SessionEvent::Header {
+        id, timestamp, cwd, ..
+    } = &result.events[0]
+    {
         assert_eq!(id, "my-session-id");
         assert_eq!(timestamp, "2026-02-16T10:00:00.000Z");
         assert_eq!(cwd.as_deref(), Some("/home/agent"));
@@ -391,7 +422,11 @@ fn context_parse_session_header() {
 fn context_parse_user_turn() {
     let ctx = "--- session: s1 ---\nstarted: 2026-01-01T00:00:00Z\n\n--- 2026-01-01T00:01:00Z ---\n<up>\nHello, what is 2+2?\n</up>\n\n";
     let result = context::parse(ctx);
-    assert!(result.errors.is_empty(), "Errors: {:?}", result.errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(
+        result.errors.is_empty(),
+        "Errors: {:?}",
+        result.errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
     // Header + Turn
     assert_eq!(result.events.len(), 2);
     if let crate::transform::SessionEvent::Turn(turn) = &result.events[1] {
@@ -456,7 +491,10 @@ fn context_parse_tool_error() {
 fn context_parse_model_change() {
     let ctx = "--- session: s1 ---\nstarted: 2026-01-01T00:00:00Z\n\n--- 2026-01-01T00:02:00Z [model: claude-sonnet-4-5 (anthropic)] ---\n\n";
     let result = context::parse(ctx);
-    if let crate::transform::SessionEvent::ModelChange { model_id, provider, .. } = &result.events[1] {
+    if let crate::transform::SessionEvent::ModelChange {
+        model_id, provider, ..
+    } = &result.events[1]
+    {
         assert_eq!(model_id, "claude-sonnet-4-5");
         assert_eq!(provider, "anthropic");
     } else {
@@ -496,15 +534,38 @@ fn context_round_trip_preserves_structure() {
     // JSONL → events → clean context → parse → events
     let result = parse_lines(sample_jsonl());
     let original_events = transform(result.records);
-    let ctx_string = context::emit(&original_events, &EmitOptions { include_thinking: true, ..Default::default() });
+    let ctx_string = context::emit(
+        &original_events,
+        &EmitOptions {
+            include_thinking: true,
+            ..Default::default()
+        },
+    );
     let parsed = context::parse(&ctx_string);
 
-    assert!(parsed.errors.is_empty(), "Parse errors: {:?}", parsed.errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(
+        parsed.errors.is_empty(),
+        "Parse errors: {:?}",
+        parsed.errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
 
     // Count event types
-    let orig_turns: Vec<_> = original_events.iter().filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_))).collect();
-    let parsed_turns: Vec<_> = parsed.events.iter().filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_))).collect();
-    assert_eq!(orig_turns.len(), parsed_turns.len(), "Turn count mismatch: {} vs {}", orig_turns.len(), parsed_turns.len());
+    let orig_turns: Vec<_> = original_events
+        .iter()
+        .filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_)))
+        .collect();
+    let parsed_turns: Vec<_> = parsed
+        .events
+        .iter()
+        .filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_)))
+        .collect();
+    assert_eq!(
+        orig_turns.len(),
+        parsed_turns.len(),
+        "Turn count mismatch: {} vs {}",
+        orig_turns.len(),
+        parsed_turns.len()
+    );
 }
 
 #[test]
@@ -532,12 +593,17 @@ fn context_round_trip_preserves_tool_names() {
 
     let has_read_tool = parsed.events.iter().any(|e| {
         if let crate::transform::SessionEvent::Turn(turn) = e {
-            turn.contents.iter().any(|c| matches!(c, crate::transform::TurnContent::Tool(t) if t.name == "read"))
+            turn.contents
+                .iter()
+                .any(|c| matches!(c, crate::transform::TurnContent::Tool(t) if t.name == "read"))
         } else {
             false
         }
     });
-    assert!(has_read_tool, "Tool name 'read' not preserved in round-trip");
+    assert!(
+        has_read_tool,
+        "Tool name 'read' not preserved in round-trip"
+    );
 }
 
 #[test]
@@ -547,7 +613,10 @@ fn context_round_trip_preserves_compaction() {
     let ctx = context::emit(&events, &EmitOptions::default());
     let parsed = context::parse(&ctx);
 
-    let has_compaction = parsed.events.iter().any(|e| matches!(e, crate::transform::SessionEvent::Compaction { .. }));
+    let has_compaction = parsed
+        .events
+        .iter()
+        .any(|e| matches!(e, crate::transform::SessionEvent::Compaction { .. }));
     assert!(has_compaction, "Compaction event not preserved");
 }
 
@@ -576,7 +645,11 @@ fn clean_context_session_events_count() {
     let session = CleanContextSession::from_str(&ctx_string);
 
     // header + model_change + user_turn + assistant_turn(tool) + assistant_turn(text) + compaction
-    assert!(session.events().len() >= 5, "Expected at least 5 events, got {}", session.events().len());
+    assert!(
+        session.events().len() >= 5,
+        "Expected at least 5 events, got {}",
+        session.events().len()
+    );
 }
 
 #[test]
@@ -631,7 +704,11 @@ fn context_parse_multiple_tool_calls_in_one_turn() {
     let ctx = "--- session: s1 ---\nstarted: 2026-01-01T00:00:00Z\n\n--- 2026-01-01T00:02:00Z ---\nLet me check both files.\n[tool:read] /tmp/a.txt\n  → contents of a\n[tool:read] /tmp/b.txt\n  → contents of b\n\n";
     let result = context::parse(ctx);
     if let crate::transform::SessionEvent::Turn(turn) = &result.events[1] {
-        let tool_count = turn.contents.iter().filter(|c| matches!(c, crate::transform::TurnContent::Tool(_))).count();
+        let tool_count = turn
+            .contents
+            .iter()
+            .filter(|c| matches!(c, crate::transform::TurnContent::Tool(_)))
+            .count();
         assert_eq!(tool_count, 2, "Expected 2 tool calls, got {}", tool_count);
     }
 }
@@ -652,7 +729,11 @@ fn context_emit_is_human_readable() {
     let ctx = jsonl_to_context(sample_jsonl(), &EmitOptions::default());
     assert!(!ctx.contains(r#"\""#));
     for line in ctx.lines() {
-        assert!(line.len() < 500, "Line too long for human readability: {}", &line[..80.min(line.len())]);
+        assert!(
+            line.len() < 500,
+            "Line too long for human readability: {}",
+            &line[..80.min(line.len())]
+        );
     }
 }
 
@@ -676,7 +757,12 @@ fn init_session_concatenates_context_files() {
     assert!(ctx.contains("Available agents:"));
     // Both files in same turn block (one --- separator after header)
     let separators: Vec<_> = ctx.lines().filter(|l| l.starts_with("--- 2026-")).collect();
-    assert_eq!(separators.len(), 1, "Preloaded files should be one turn, got {} separators", separators.len());
+    assert_eq!(
+        separators.len(),
+        1,
+        "Preloaded files should be one turn, got {} separators",
+        separators.len()
+    );
 }
 
 #[test]
@@ -720,7 +806,9 @@ fn to_wire_produces_valid_jsonl() {
     for (i, line) in wire.lines().enumerate() {
         assert!(
             serde_json::from_str::<serde_json::Value>(line).is_ok(),
-            "Line {} is not valid JSON: {}", i + 1, &line[..80.min(line.len())]
+            "Line {} is not valid JSON: {}",
+            i + 1,
+            &line[..80.min(line.len())]
         );
     }
 }
@@ -803,6 +891,14 @@ fn full_ctx_lifecycle() {
     // 6. Verify final .ctx parses correctly
     let final_parsed = context::parse(&ctx);
     assert!(final_parsed.errors.is_empty());
-    let turns: Vec<_> = final_parsed.events.iter().filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_))).collect();
-    assert_eq!(turns.len(), 3, "Expected 3 turns: preload + user + assistant");
+    let turns: Vec<_> = final_parsed
+        .events
+        .iter()
+        .filter(|e| matches!(e, crate::transform::SessionEvent::Turn(_)))
+        .collect();
+    assert_eq!(
+        turns.len(),
+        3,
+        "Expected 3 turns: preload + user + assistant"
+    );
 }

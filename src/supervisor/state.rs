@@ -6,7 +6,10 @@ use tokio::fs;
 
 use super::types::SessionState;
 
-pub async fn write_in_process(base: &str, sessions: &HashMap<String, SessionState>) -> Result<(), String> {
+pub async fn write_in_process(
+    base: &str,
+    sessions: &HashMap<String, SessionState>,
+) -> Result<(), String> {
     let dir = Path::new(base).join("supervisor");
     fs::create_dir_all(&dir)
         .await
@@ -85,10 +88,7 @@ pub fn extract_context_pct(pane: &str) -> Option<u8> {
 
 pub fn extract_frontier_keywords(pane: &str) -> Option<String> {
     // Take last 20 non-empty lines as a rough summary source
-    let lines: Vec<&str> = pane
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let lines: Vec<&str> = pane.lines().filter(|l| !l.trim().is_empty()).collect();
 
     if lines.is_empty() {
         return None;

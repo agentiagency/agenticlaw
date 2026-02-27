@@ -1,21 +1,11 @@
 use crate::transform::*;
 
+#[derive(Default)]
 pub struct FormatOptions {
     pub include_thinking: bool,
     pub include_usage: bool,
     pub summary_only: bool,
     pub raw: bool,
-}
-
-impl Default for FormatOptions {
-    fn default() -> Self {
-        Self {
-            include_thinking: false,
-            include_usage: false,
-            summary_only: false,
-            raw: false,
-        }
-    }
 }
 
 const MAX_TOOL_RESULT_LINES: usize = 20;
@@ -25,7 +15,9 @@ pub fn format_session(events: &[SessionEvent], opts: &FormatOptions) -> String {
 
     for event in events {
         match event {
-            SessionEvent::Header { id, timestamp, cwd, .. } => {
+            SessionEvent::Header {
+                id, timestamp, cwd, ..
+            } => {
                 let short_id = if id.len() > 8 { &id[..8] } else { id };
                 out.push_str(&format!("═══ Session {} ═══\n", short_id));
                 out.push_str(&format!("Started: {}\n", format_timestamp(timestamp)));
@@ -139,7 +131,10 @@ fn format_tool_interaction(out: &mut String, interaction: &ToolInteraction, opts
             for line in &lines[..show] {
                 out.push_str(&format!("  → {}\n", line));
             }
-            out.push_str(&format!("  ... ({} lines omitted)\n", lines.len() - MAX_TOOL_RESULT_LINES));
+            out.push_str(&format!(
+                "  ... ({} lines omitted)\n",
+                lines.len() - MAX_TOOL_RESULT_LINES
+            ));
             for line in &lines[lines.len() - show..] {
                 out.push_str(&format!("  → {}\n", line));
             }

@@ -28,10 +28,10 @@ pub const LAYER_NAMES: [&str; 4] = ["Gateway", "Attention", "Pattern", "Integrat
 
 /// Default model selection per layer.
 const LAYER_MODEL_TIERS: [(&str, &str); 4] = [
-    ("opus", "claude-opus-4-6"),      // L0: user-facing gateway
-    ("opus", "claude-opus-4-6"),      // L1: attention distillation
-    ("opus", "claude-opus-4-6"),      // L2: pattern recognition
-    ("opus", "claude-opus-4-6"),      // L3: integration/synthesis
+    ("opus", "claude-opus-4-6"), // L0: user-facing gateway
+    ("opus", "claude-opus-4-6"), // L1: attention distillation
+    ("opus", "claude-opus-4-6"), // L2: pattern recognition
+    ("opus", "claude-opus-4-6"), // L3: integration/synthesis
 ];
 
 pub struct ConsciousnessStack {
@@ -42,8 +42,18 @@ pub struct ConsciousnessStack {
 }
 
 impl ConsciousnessStack {
-    pub fn new(workspace: PathBuf, souls_dir: PathBuf, api_key: String, config: ConsciousnessConfig) -> Self {
-        Self { workspace, souls_dir, api_key, config }
+    pub fn new(
+        workspace: PathBuf,
+        souls_dir: PathBuf,
+        api_key: String,
+        config: ConsciousnessConfig,
+    ) -> Self {
+        Self {
+            workspace,
+            souls_dir,
+            api_key,
+            config,
+        }
     }
 
     /// Get the .ctx file path for a layer.
@@ -58,20 +68,29 @@ impl ConsciousnessStack {
     }
 
     fn layer_soul(&self, layer: usize) -> String {
-        let names = ["L0-gateway.md", "L1-attention.md", "L2-pattern.md", "L3-integration.md"];
+        let names = [
+            "L0-gateway.md",
+            "L1-attention.md",
+            "L2-pattern.md",
+            "L3-integration.md",
+        ];
         if layer >= names.len() {
             return format!("You are consciousness layer {}.", layer);
         }
         let path = self.souls_dir.join(names[layer]);
         std::fs::read_to_string(&path).unwrap_or_else(|_| {
-            format!("You are consciousness layer {} ({}).", layer, LAYER_NAMES[layer])
+            format!(
+                "You are consciousness layer {} ({}).",
+                layer, LAYER_NAMES[layer]
+            )
         })
     }
 
     fn core_soul(&self) -> String {
         let path = self.souls_dir.join("core.md");
         std::fs::read_to_string(&path).unwrap_or_else(|_| {
-            "You are a core identity layer. You maintain continuity across compaction cycles.".to_string()
+            "You are a core identity layer. You maintain continuity across compaction cycles."
+                .to_string()
         })
     }
 
@@ -92,25 +111,40 @@ impl ConsciousnessStack {
         let models: Vec<String> = match resp {
             Ok(r) if r.status().is_success() => {
                 #[derive(serde::Deserialize)]
-                struct ModelEntry { id: String }
+                struct ModelEntry {
+                    id: String,
+                }
                 #[derive(serde::Deserialize)]
-                struct ModelList { data: Vec<ModelEntry> }
+                struct ModelList {
+                    data: Vec<ModelEntry>,
+                }
                 match r.json::<ModelList>().await {
                     Ok(list) => list.data.into_iter().map(|m| m.id).collect(),
-                    Err(e) => { warn!("Failed to parse model list: {}", e); return resolved; }
+                    Err(e) => {
+                        warn!("Failed to parse model list: {}", e);
+                        return resolved;
+                    }
                 }
             }
-            Ok(r) => { warn!("Model list API returned {}", r.status()); return resolved; }
-            Err(e) => { warn!("Failed to fetch model list: {}", e); return resolved; }
+            Ok(r) => {
+                warn!("Model list API returned {}", r.status());
+                return resolved;
+            }
+            Err(e) => {
+                warn!("Failed to fetch model list: {}", e);
+                return resolved;
+            }
         };
 
         for i in 0..4 {
             let tier = LAYER_MODEL_TIERS[i].0;
-            let candidates: Vec<&String> = models.iter()
+            let candidates: Vec<&String> = models
+                .iter()
                 .filter(|m| m.starts_with("claude-") && m.contains(tier))
                 .collect();
 
-            let best = candidates.iter()
+            let best = candidates
+                .iter()
                 .filter(|m| {
                     let pattern = format!("claude-{}-4", tier);
                     m.starts_with(&pattern)
@@ -141,7 +175,12 @@ impl ConsciousnessStack {
         let state_path = self.workspace.join("core-state.json");
         if let Ok(content) = std::fs::read_to_string(&state_path) {
             if let Ok(state) = serde_json::from_str::<serde_json::Value>(&content) {
-                if state.get("core_b").and_then(|c| c.get("phase")).and_then(|p| p.as_str()) == Some("Growing") {
+                if state
+                    .get("core_b")
+                    .and_then(|c| c.get("phase"))
+                    .and_then(|p| p.as_str())
+                    == Some("Growing")
+                {
                     return "core-b";
                 }
             }
@@ -154,7 +193,9 @@ impl ConsciousnessStack {
     pub fn extract_ego(sessions_dir: &Path, budget_chars: usize) -> Option<String> {
         let ctx_path = find_latest_ctx(sessions_dir)?;
         let content = std::fs::read_to_string(&ctx_path).ok()?;
-        if content.trim().is_empty() { return None; }
+        if content.trim().is_empty() {
+            return None;
+        }
 
         // Extract assistant blocks (lines NOT inside <up>...</up> and not headers)
         let mut assistant_text = String::new();
@@ -162,13 +203,29 @@ impl ConsciousnessStack {
         let mut in_header = true;
 
         for line in content.lines() {
-            if line.starts_with("--- session:") { in_header = true; continue; }
-            if in_header && line.is_empty() { in_header = false; continue; }
-            if in_header { continue; }
+            if line.starts_with("--- session:") {
+                in_header = true;
+                continue;
+            }
+            if in_header && line.is_empty() {
+                in_header = false;
+                continue;
+            }
+            if in_header {
+                continue;
+            }
 
-            if line == "<up>" { in_up = true; continue; }
-            if line == "</up>" { in_up = false; continue; }
-            if line.starts_with("--- ") && line.ends_with(" ---") { continue; }
+            if line == "<up>" {
+                in_up = true;
+                continue;
+            }
+            if line == "</up>" {
+                in_up = false;
+                continue;
+            }
+            if line.starts_with("--- ") && line.ends_with(" ---") {
+                continue;
+            }
 
             if !in_up {
                 assistant_text.push_str(line);
@@ -176,7 +233,9 @@ impl ConsciousnessStack {
             }
         }
 
-        if assistant_text.trim().is_empty() { return None; }
+        if assistant_text.trim().is_empty() {
+            return None;
+        }
 
         // Take the tail within budget
         if assistant_text.len() <= budget_chars {
@@ -195,14 +254,18 @@ impl ConsciousnessStack {
         let state: serde_json::Value = serde_json::from_str(&state_json).ok()?;
 
         // Find the Growing core
-        let warm_dir = if state.get("core_a")
+        let warm_dir = if state
+            .get("core_a")
             .and_then(|c| c.get("phase"))
-            .and_then(|p| p.as_str()) == Some("Growing")
+            .and_then(|p| p.as_str())
+            == Some("Growing")
         {
             "core-a"
-        } else if state.get("core_b")
+        } else if state
+            .get("core_b")
             .and_then(|c| c.get("phase"))
-            .and_then(|p| p.as_str()) == Some("Growing")
+            .and_then(|p| p.as_str())
+            == Some("Growing")
         {
             "core-b"
         } else {
@@ -210,7 +273,11 @@ impl ConsciousnessStack {
             "core-a"
         };
 
-        let sessions_dir = self.workspace.join(warm_dir).join(".agenticlaw").join("sessions");
+        let sessions_dir = self
+            .workspace
+            .join(warm_dir)
+            .join(".agenticlaw")
+            .join("sessions");
         Self::extract_ego(&sessions_dir, budget_chars)
     }
 
@@ -238,7 +305,9 @@ impl ConsciousnessStack {
 
     /// Extract the last N `\n\n`-delimited paragraphs from a layer's latest .ctx file.
     fn extract_ctx_tail(&self, layer: usize, n: usize) -> String {
-        if n == 0 { return String::new(); }
+        if n == 0 {
+            return String::new();
+        }
         let sessions = self.layer_ctx_path(layer);
         find_latest_ctx(&sessions)
             .and_then(|p| std::fs::read_to_string(&p).ok())
@@ -251,7 +320,11 @@ impl ConsciousnessStack {
     pub fn wake_core_prompt(&self, ego: &str) -> String {
         let soul = self.core_soul();
         let warm_dir = self.warm_core_dir();
-        let sessions = self.workspace.join(warm_dir).join(".agenticlaw").join("sessions");
+        let sessions = self
+            .workspace
+            .join(warm_dir)
+            .join(".agenticlaw")
+            .join("sessions");
         let tail = find_latest_ctx(&sessions)
             .and_then(|p| std::fs::read_to_string(&p).ok())
             .map(|content| extract_tail_paragraphs(&content, self.config.ego.tail_paragraphs))
@@ -274,14 +347,20 @@ impl ConsciousnessStack {
     /// `birth=true`: new soul from SOUL.md (first time only).
     /// `birth=false` (default): wake from ego capsule.
     pub async fn launch(self, birth: bool) -> anyhow::Result<()> {
-        info!("=== Consciousness Stack v2 {} ===", if birth { "BIRTH" } else { "WAKE" });
+        info!(
+            "=== Consciousness Stack v2 {} ===",
+            if birth { "BIRTH" } else { "WAKE" }
+        );
         info!("Workspace: {}", self.workspace.display());
         info!("Souls: {}", self.souls_dir.display());
 
         // Run version controller — ensure v2 layout
         let version_ctrl = VersionController::new(self.workspace.clone());
         version_ctrl.ensure_version(2)?;
-        info!("Workspace schema version: {}", version_ctrl.current_version());
+        info!(
+            "Workspace schema version: {}",
+            version_ctrl.current_version()
+        );
 
         // Auto-detect models
         let layer_models = Self::detect_models(&self.api_key).await;
@@ -303,8 +382,12 @@ impl ConsciousnessStack {
             // no prior .ctx exists to distill from.
             for i in 0..4 {
                 let ego = ego::distill_layer_ego_on_sleep(
-                    &self.workspace, i, &self.api_key, &self.config
-                ).await;
+                    &self.workspace,
+                    i,
+                    &self.api_key,
+                    &self.config,
+                )
+                .await;
 
                 if let Some(ref ego_text) = ego {
                     info!("L{} ego distilled ({} chars)", i, ego_text.len());
@@ -334,8 +417,14 @@ impl ConsciousnessStack {
                 }
             }
 
-            info!("L{} ({}) — port {} — model {} — workspace {}",
-                i, LAYER_NAMES[i], LAYER_PORTS[i], layer_models[i], ws.display());
+            info!(
+                "L{} ({}) — port {} — model {} — workspace {}",
+                i,
+                LAYER_NAMES[i],
+                LAYER_PORTS[i],
+                layer_models[i],
+                ws.display()
+            );
         }
 
         // Core system prompts: ego or soul
@@ -344,9 +433,8 @@ impl ConsciousnessStack {
         } else {
             // Core self-distills fresh
             let warm_dir = self.warm_core_dir();
-            let core_ego = ego::distill_core_ego_on_sleep(
-                &self.workspace, &self.api_key, &self.config
-            ).await;
+            let core_ego =
+                ego::distill_core_ego_on_sleep(&self.workspace, &self.api_key, &self.config).await;
             if let Some(ref ego) = core_ego {
                 info!("Core ego distilled ({} chars)", ego.len());
                 self.wake_core_prompt(ego)
@@ -378,36 +466,46 @@ impl ConsciousnessStack {
             }
         }
 
-        info!("Core-A, Core-B — model {} — workspace {}/core-*", core_model, self.workspace.display());
+        info!(
+            "Core-A, Core-B — model {} — workspace {}/core-*",
+            core_model,
+            self.workspace.display()
+        );
 
         // 1. Launch L0 as a full gateway with resolved prompt
         let l0_port = self.config.ports.l0;
-        let l0_handle = self.launch_gateway(&layer_prompts[0], &layer_models[0], l0_port).await?;
+        let l0_handle = self
+            .launch_gateway(&layer_prompts[0], &layer_models[0], l0_port)
+            .await?;
 
         // 2. Wait briefly for L0 to create its first .ctx file
         tokio::time::sleep(Duration::from_secs(self.config.cascade.gateway_settle_secs)).await;
 
         // 3. Create inner layer runtimes (L1-L3) with resolved prompts
         let max_tool_iter = self.config.cascade.max_tool_iterations;
-        let inner_runtimes: Vec<Arc<AgentRuntime>> = (1..4).map(|i| {
-            let ws = self.layer_workspace(i);
-            let tools = create_default_registry(&ws);
-            let config = AgentConfig {
-                default_model: layer_models[i].clone(),
-                max_tool_iterations: max_tool_iter,
-                system_prompt: Some(layer_prompts[i].clone()),
-                workspace_root: ws,
-                sleep_threshold_pct: self.config.sleep.context_threshold_pct,
-            };
-            Arc::new(AgentRuntime::new(&self.api_key, tools, config))
-        }).collect();
+        let inner_runtimes: Vec<Arc<AgentRuntime>> = (1..4)
+            .map(|i| {
+                let ws = self.layer_workspace(i);
+                let tools = create_default_registry(&ws);
+                let config = AgentConfig {
+                    default_model: layer_models[i].clone(),
+                    max_tool_iterations: max_tool_iter,
+                    system_prompt: Some(layer_prompts[i].clone()),
+                    workspace_root: ws,
+                    sleep_threshold_pct: self.config.sleep.context_threshold_pct,
+                };
+                Arc::new(AgentRuntime::new(&self.api_key, tools, config))
+            })
+            .collect();
 
         // Per-layer semaphores (1 concurrent task per layer)
-        let layer_semaphores: Vec<Arc<Semaphore>> = (0..3).map(|_| Arc::new(Semaphore::new(1))).collect();
+        let layer_semaphores: Vec<Arc<Semaphore>> =
+            (0..3).map(|_| Arc::new(Semaphore::new(1))).collect();
 
         // 4. Start the file watcher
         let (change_tx, mut change_rx) = mpsc::channel::<CtxChange>(100);
-        let mut watcher = CtxWatcher::new(Duration::from_millis(self.config.cascade.watcher_poll_ms));
+        let mut watcher =
+            CtxWatcher::new(Duration::from_millis(self.config.cascade.watcher_poll_ms));
 
         // Watch L0-L3's .ctx directories for changes
         for i in 0..4 {
@@ -418,7 +516,10 @@ impl ConsciousnessStack {
                 watcher.watch(i, ctx_path);
                 info!("Watching L{} .ctx file", i);
             } else {
-                info!("L{} .ctx not yet created, directory registered for scanning", i);
+                info!(
+                    "L{} .ctx not yet created, directory registered for scanning",
+                    i
+                );
                 let tx = change_tx.clone();
                 let dir = sessions_dir.clone();
                 let layer = i;
@@ -428,12 +529,14 @@ impl ConsciousnessStack {
                         if let Some(path) = find_latest_ctx(&dir) {
                             info!("Found L{} .ctx: {}", layer, path.display());
                             let content = std::fs::read_to_string(&path).unwrap_or_default();
-                            let _ = tx.send(CtxChange {
-                                layer,
-                                path,
-                                delta: content,
-                                total_size: 0,
-                            }).await;
+                            let _ = tx
+                                .send(CtxChange {
+                                    layer,
+                                    path,
+                                    delta: content,
+                                    total_size: 0,
+                                })
+                                .await;
                             break;
                         }
                     }
@@ -448,7 +551,11 @@ impl ConsciousnessStack {
         let workspace = self.workspace.clone();
         info!("=== Consciousness Stack v2 Active ===");
 
-        log_progress(&workspace, "Consciousness stack v2 initialized with 4 layers + dual core").await;
+        log_progress(
+            &workspace,
+            "Consciousness stack v2 initialized with 4 layers + dual core",
+        )
+        .await;
 
         while let Some(change) = change_rx.recv().await {
             let target_layer = change.layer + 1;
@@ -468,8 +575,13 @@ impl ConsciousnessStack {
                 continue;
             }
 
-            info!("L{} .ctx changed (+{} bytes) → triggering L{} ({})",
-                change.layer, change.delta.len(), target_layer, LAYER_NAMES[target_layer]);
+            info!(
+                "L{} .ctx changed (+{} bytes) → triggering L{} ({})",
+                change.layer,
+                change.delta.len(),
+                target_layer,
+                LAYER_NAMES[target_layer]
+            );
 
             let runtime = inner_runtimes[target_layer - 1].clone();
             let delta = change.delta.clone();
@@ -487,7 +599,16 @@ impl ConsciousnessStack {
                         return;
                     }
                 };
-                process_layer_update(runtime, target_layer, &delta, &ws, delta_max, inj_threshold, inj_tail).await;
+                process_layer_update(
+                    runtime,
+                    target_layer,
+                    &delta,
+                    &ws,
+                    delta_max,
+                    inj_threshold,
+                    inj_tail,
+                )
+                .await;
             });
         }
 
@@ -496,12 +617,20 @@ impl ConsciousnessStack {
     }
 
     /// Launch L0 as a full gateway server with the resolved prompt.
-    async fn launch_gateway(&self, prompt: &str, _model: &str, port: u16) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+    async fn launch_gateway(
+        &self,
+        prompt: &str,
+        _model: &str,
+        port: u16,
+    ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
         let config = ExtendedConfig {
             gateway: GatewayConfig {
                 port,
                 bind: BindMode::Lan,
-                auth: AuthConfig { mode: AuthMode::None, token: None },
+                auth: AuthConfig {
+                    mode: AuthMode::None,
+                    token: None,
+                },
             },
             anthropic_api_key: Some(self.api_key.clone()),
             workspace_root: self.layer_workspace(0),
@@ -570,7 +699,11 @@ async fn process_layer_update(
             match event {
                 AgentEvent::Text(text) => full_response.push_str(&text),
                 AgentEvent::Sleep { token_count } => {
-                    info!("L{} sleeping at {}k tokens — needs ego distillation", layer, token_count / 1000);
+                    info!(
+                        "L{} sleeping at {}k tokens — needs ego distillation",
+                        layer,
+                        token_count / 1000
+                    );
                     // Return empty — the caller should trigger background ego distill
                     return String::new();
                 }
@@ -596,7 +729,12 @@ async fn process_layer_update(
         return;
     }
 
-    info!("L{} ({}) produced {} chars", layer, LAYER_NAMES[layer], response.len());
+    info!(
+        "L{} ({}) produced {} chars",
+        layer,
+        LAYER_NAMES[layer],
+        response.len()
+    );
 
     // Check for injection opportunity back to L0
     if layer >= 2 {
@@ -604,7 +742,8 @@ async fn process_layer_update(
         if let Some(l0_ctx) = find_latest_ctx(&l0_sessions) {
             let l0_content = std::fs::read_to_string(&l0_ctx).unwrap_or_default();
             let l0_tail = if l0_content.len() > injection_l0_tail {
-                let boundary = safe_byte_boundary(&l0_content, l0_content.len() - injection_l0_tail);
+                let boundary =
+                    safe_byte_boundary(&l0_content, l0_content.len() - injection_l0_tail);
                 &l0_content[boundary..]
             } else {
                 &l0_content
@@ -613,26 +752,33 @@ async fn process_layer_update(
             let score = injection::correlation_score(l0_tail, &response);
             if score > injection_threshold {
                 info!("L{} injecting into L0 (correlation: {:.2})", layer, score);
-                let _ = injection::write_layer_injection(
-                    workspace,
-                    layer,
-                    &response,
-                    delta.len(),
-                );
+                let _ = injection::write_layer_injection(workspace, layer, &response, delta.len());
             }
         }
     }
 
-    log_progress(workspace, &format!(
-        "L{} ({}) processed delta, produced {} chars{}",
-        layer, LAYER_NAMES[layer], response.len(),
-        if layer >= 2 { " (injection check done)" } else { "" }
-    )).await;
+    log_progress(
+        workspace,
+        &format!(
+            "L{} ({}) processed delta, produced {} chars{}",
+            layer,
+            LAYER_NAMES[layer],
+            response.len(),
+            if layer >= 2 {
+                " (injection check done)"
+            } else {
+                ""
+            }
+        ),
+    )
+    .await;
 }
 
 /// Find the latest .ctx file in a sessions directory.
 pub fn find_latest_ctx(sessions_dir: &Path) -> Option<PathBuf> {
-    if !sessions_dir.is_dir() { return None; }
+    if !sessions_dir.is_dir() {
+        return None;
+    }
     let mut files: Vec<PathBuf> = std::fs::read_dir(sessions_dir)
         .ok()?
         .filter_map(|e| e.ok())

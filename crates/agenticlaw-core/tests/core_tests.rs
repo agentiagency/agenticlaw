@@ -61,7 +61,10 @@ fn role_serde_roundtrip() {
 fn role_serializes_lowercase() {
     assert_eq!(serde_json::to_string(&Role::System).unwrap(), r#""system""#);
     assert_eq!(serde_json::to_string(&Role::User).unwrap(), r#""user""#);
-    assert_eq!(serde_json::to_string(&Role::Assistant).unwrap(), r#""assistant""#);
+    assert_eq!(
+        serde_json::to_string(&Role::Assistant).unwrap(),
+        r#""assistant""#
+    );
     assert_eq!(serde_json::to_string(&Role::Tool).unwrap(), r#""tool""#);
 }
 
@@ -198,7 +201,8 @@ fn auth_config_defaults() {
 
 #[test]
 fn rpc_request_parse_chat_send() {
-    let json = r#"{"id":"req-1","method":"chat.send","params":{"session":"main","message":"hello"}}"#;
+    let json =
+        r#"{"id":"req-1","method":"chat.send","params":{"session":"main","message":"hello"}}"#;
     let req: RpcRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.id, "req-1");
     assert_eq!(req.method, "chat.send");
@@ -341,7 +345,8 @@ fn event_message_auth_result() {
 
 #[test]
 fn incoming_message_parses_rpc() {
-    let json = r#"{"id":"req-1","method":"chat.send","params":{"session":"main","message":"hello"}}"#;
+    let json =
+        r#"{"id":"req-1","method":"chat.send","params":{"session":"main","message":"hello"}}"#;
     let msg: IncomingMessage = serde_json::from_str(json).unwrap();
     match msg {
         IncomingMessage::Rpc(req) => {
@@ -395,7 +400,11 @@ fn client_message_chat() {
     let json = r#"{"type":"chat","session":"s1","message":"hello","model":"claude-opus-4-6"}"#;
     let msg: ClientMessage = serde_json::from_str(json).unwrap();
     match msg {
-        ClientMessage::Chat { session, message, model } => {
+        ClientMessage::Chat {
+            session,
+            message,
+            model,
+        } => {
             assert_eq!(session, "s1");
             assert_eq!(message, "hello");
             assert_eq!(model.as_deref(), Some("claude-opus-4-6"));
@@ -461,7 +470,10 @@ fn server_message_result_error() {
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains("not found"));
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert!(parsed.get("result").is_none(), "result field should be skipped when None");
+    assert!(
+        parsed.get("result").is_none(),
+        "result field should be skipped when None"
+    );
 }
 
 #[test]
@@ -472,7 +484,10 @@ fn server_message_pong() {
 
 #[test]
 fn server_message_info() {
-    let msg = ServerMessage::Info { version: "0.1.0".into(), layer: Some("gateway".into()) };
+    let msg = ServerMessage::Info {
+        version: "0.1.0".into(),
+        layer: Some("gateway".into()),
+    };
     let json = serde_json::to_string(&msg).unwrap();
     assert!(json.contains(r#""type":"info""#));
     assert!(json.contains("0.1.0"));
@@ -526,8 +541,14 @@ fn error_display_all_variants() {
         Error::InvalidMessage("x".into()),
         Error::SessionNotFound("x".into()),
         Error::MethodNotFound("x".into()),
-        Error::LlmError { provider: "p".into(), message: "m".into() },
-        Error::ToolError { name: "n".into(), message: "m".into() },
+        Error::LlmError {
+            provider: "p".into(),
+            message: "m".into(),
+        },
+        Error::ToolError {
+            name: "n".into(),
+            message: "m".into(),
+        },
         Error::ConfigError("x".into()),
         Error::Internal("x".into()),
     ];

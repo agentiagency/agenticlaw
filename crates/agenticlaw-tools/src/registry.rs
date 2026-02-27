@@ -18,8 +18,12 @@ pub enum ToolResult {
 }
 
 impl ToolResult {
-    pub fn text(s: impl Into<String>) -> Self { Self::Text(s.into()) }
-    pub fn error(s: impl Into<String>) -> Self { Self::Error(s.into()) }
+    pub fn text(s: impl Into<String>) -> Self {
+        Self::Text(s.into())
+    }
+    pub fn error(s: impl Into<String>) -> Self {
+        Self::Error(s.into())
+    }
 
     pub fn to_content_string(&self) -> String {
         match self {
@@ -29,7 +33,9 @@ impl ToolResult {
         }
     }
 
-    pub fn is_error(&self) -> bool { matches!(self, Self::Error(_)) }
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
 }
 
 /// The Tool trait — implement this to add a new capability.
@@ -46,16 +52,22 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
 
     /// System prompt fragment for this tool (injected into LLM context).
-    fn prompt(&self) -> &str { "" }
+    fn prompt(&self) -> &str {
+        ""
+    }
 
     /// JSON Schema for input parameters.
     fn input_schema(&self) -> Value;
 
     /// Whether this tool only reads state (no side effects).
-    fn is_read_only(&self) -> bool { false }
+    fn is_read_only(&self) -> bool {
+        false
+    }
 
     /// Whether this tool is currently enabled.
-    fn is_enabled(&self) -> bool { true }
+    fn is_enabled(&self) -> bool {
+        true
+    }
 
     /// Execute the tool with the given arguments.
     async fn execute(&self, args: Value) -> ToolResult;
@@ -63,11 +75,7 @@ pub trait Tool: Send + Sync {
     /// Execute with cancellation support. Default: race execute() against cancellation.
     /// Tools that manage child processes (like BashTool) should override this to
     /// kill the process on cancellation.
-    async fn execute_cancellable(
-        &self,
-        args: Value,
-        cancel: CancellationToken,
-    ) -> ToolResult {
+    async fn execute_cancellable(&self, args: Value, cancel: CancellationToken) -> ToolResult {
         tokio::select! {
             result = self.execute(args) => result,
             _ = cancel.cancelled() => ToolResult::text("[cancelled]"),
@@ -89,11 +97,17 @@ pub struct ToolRegistry {
 }
 
 impl Default for ToolRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolRegistry {
-    pub fn new() -> Self { Self { tools: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
 
     /// Register a tool. Replaces any existing tool with the same name.
     pub fn register(&mut self, tool: impl Tool + 'static) {
@@ -134,7 +148,8 @@ impl ToolRegistry {
 
     /// Get LLM tool definitions for all enabled tools.
     pub fn get_definitions(&self) -> Vec<LlmTool> {
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|t| t.is_enabled())
             .map(|t| t.to_llm_tool())
             .collect()
@@ -142,7 +157,8 @@ impl ToolRegistry {
 
     /// Get system prompt fragments from all enabled tools.
     pub fn combined_prompts(&self) -> String {
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|t| t.is_enabled())
             .map(|t| t.prompt())
             .filter(|p| !p.is_empty())
@@ -156,7 +172,8 @@ impl ToolRegistry {
 
     /// List only read-only tools.
     pub fn list_read_only(&self) -> Vec<&str> {
-        self.tools.iter()
+        self.tools
+            .iter()
             .filter(|(_, t)| t.is_read_only())
             .map(|(k, _)| k.as_str())
             .collect()

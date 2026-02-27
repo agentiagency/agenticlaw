@@ -1,7 +1,7 @@
 //! Tests for agenticlaw-agent: Session, SessionRegistry, ContextManager, and real AgentRuntime
 
 use agenticlaw_agent::*;
-use agenticlaw_llm::{LlmContent, LlmMessage, ContentBlock};
+use agenticlaw_llm::{ContentBlock, LlmContent, LlmMessage};
 
 // ===========================================================================
 // SessionKey (re-exported from core)
@@ -45,7 +45,7 @@ fn context_manager_message_tokens_blocks() {
             ContentBlock::Text { text: "hi".into() }, // 1
             ContentBlock::ToolUse {
                 id: "tc-1".into(),
-                name: "read".into(),               // 1
+                name: "read".into(),                            // 1
                 input: serde_json::json!({"path": "/tmp/foo"}), // ~6 tokens for json string
             },
         ]),
@@ -58,8 +58,14 @@ fn context_manager_message_tokens_blocks() {
 fn context_manager_calculate_total() {
     let cm = ContextManager::new(100_000);
     let messages = vec![
-        LlmMessage { role: "user".into(), content: LlmContent::Text("hello".into()) },
-        LlmMessage { role: "assistant".into(), content: LlmContent::Text("hi there".into()) },
+        LlmMessage {
+            role: "user".into(),
+            content: LlmContent::Text("hello".into()),
+        },
+        LlmMessage {
+            role: "assistant".into(),
+            content: LlmContent::Text("hi there".into()),
+        },
     ];
     let total = cm.calculate_total(&messages);
     assert!(total > 20, "Expected > 20 tokens, got {}", total);
@@ -80,23 +86,34 @@ fn context_manager_set_system_adds_tokens() {
 fn context_manager_compact_removes_old_messages() {
     let cm = ContextManager::new(100); // Very small limit
 
-    let mut messages: Vec<LlmMessage> = (0..50).map(|i| LlmMessage {
-        role: "user".into(),
-        content: LlmContent::Text(format!("This is message number {} with some padding text to use tokens", i)),
-    }).collect();
+    let mut messages: Vec<LlmMessage> = (0..50)
+        .map(|i| LlmMessage {
+            role: "user".into(),
+            content: LlmContent::Text(format!(
+                "This is message number {} with some padding text to use tokens",
+                i
+            )),
+        })
+        .collect();
 
     let before = messages.len();
     cm.compact(&mut messages);
-    assert!(messages.len() < before, "Compaction should remove messages: {} -> {}", before, messages.len());
+    assert!(
+        messages.len() < before,
+        "Compaction should remove messages: {} -> {}",
+        before,
+        messages.len()
+    );
     assert!(messages.len() >= 2, "Should keep at least 2 messages");
 }
 
 #[test]
 fn context_manager_no_compact_under_limit() {
     let cm = ContextManager::new(1_000_000);
-    let mut messages = vec![
-        LlmMessage { role: "user".into(), content: LlmContent::Text("hello".into()) },
-    ];
+    let mut messages = vec![LlmMessage {
+        role: "user".into(),
+        content: LlmContent::Text("hello".into()),
+    }];
     let before = messages.len();
     cm.compact(&mut messages);
     assert_eq!(messages.len(), before, "Should not compact under limit");
@@ -139,14 +156,16 @@ async fn session_add_assistant_text() {
 #[tokio::test]
 async fn session_add_assistant_with_tools() {
     let session = Session::new(SessionKey::new("s1"), None);
-    session.add_assistant_with_tools(
-        Some("Let me check."),
-        vec![ContentBlock::ToolUse {
-            id: "tc-1".into(),
-            name: "read".into(),
-            input: serde_json::json!({"path": "/tmp/foo"}),
-        }],
-    ).await;
+    session
+        .add_assistant_with_tools(
+            Some("Let me check."),
+            vec![ContentBlock::ToolUse {
+                id: "tc-1".into(),
+                name: "read".into(),
+                input: serde_json::json!({"path": "/tmp/foo"}),
+            }],
+        )
+        .await;
     let messages = session.get_messages().await;
     assert_eq!(messages.len(), 1);
     match &messages[0].content {
@@ -160,7 +179,9 @@ async fn session_add_assistant_with_tools() {
 #[tokio::test]
 async fn session_add_tool_result() {
     let session = Session::new(SessionKey::new("s1"), None);
-    session.add_tool_result("tc-1", "file contents", false).await;
+    session
+        .add_tool_result("tc-1", "file contents", false)
+        .await;
     let messages = session.get_messages().await;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].role, "user"); // tool results sent as user role
@@ -195,7 +216,9 @@ async fn session_token_count() {
     let session = Session::new(SessionKey::new("s1"), None);
     assert_eq!(session.token_count().await, 0);
 
-    session.add_user_message("hello world", 1.0, usize::MAX).await;
+    session
+        .add_user_message("hello world", 1.0, usize::MAX)
+        .await;
     assert!(session.token_count().await > 0);
 }
 
@@ -270,18 +293,28 @@ async fn registry_remove() {
 
 fn load_api_key() -> Option<String> {
     let output = std::process::Command::new("bash")
-        .args(["-c", "source ~/.keys.sh 2>/dev/null && echo $ANTHROPIC_API_KEY"])
+        .args([
+            "-c",
+            "source ~/.keys.sh 2>/dev/null && echo $ANTHROPIC_API_KEY",
+        ])
         .output()
         .ok()?;
     let key = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if key.is_empty() { None } else { Some(key) }
+    if key.is_empty() {
+        None
+    } else {
+        Some(key)
+    }
 }
 
 #[tokio::test]
 async fn agent_runtime_simple_text_turn() {
     let api_key = match load_api_key() {
         Some(k) => k,
-        None => { eprintln!("SKIP: no ANTHROPIC_API_KEY"); return; }
+        None => {
+            eprintln!("SKIP: no ANTHROPIC_API_KEY");
+            return;
+        }
     };
 
     let tools = agenticlaw_tools::ToolRegistry::new(); // no tools
@@ -290,7 +323,7 @@ async fn agent_runtime_simple_text_turn() {
         max_tool_iterations: 5,
         system_prompt: Some("Reply with exactly the word 'pong' and nothing else.".into()),
         workspace_root: std::env::temp_dir(),
-                sleep_threshold_pct: 1.0,
+        sleep_threshold_pct: 1.0,
     };
     let runtime = AgentRuntime::new(&api_key, tools, config);
 
@@ -305,14 +338,21 @@ async fn agent_runtime_simple_text_turn() {
     while let Some(event) = event_rx.recv().await {
         match event {
             AgentEvent::Text(t) => text.push_str(&t),
-            AgentEvent::Done { .. } => { got_done = true; break; }
+            AgentEvent::Done { .. } => {
+                got_done = true;
+                break;
+            }
             AgentEvent::Error(e) => panic!("Agent error: {}", e),
             _ => {}
         }
     }
 
     assert!(got_done, "Never received Done event");
-    assert!(text.to_lowercase().contains("pong"), "Expected 'pong', got: {}", text);
+    assert!(
+        text.to_lowercase().contains("pong"),
+        "Expected 'pong', got: {}",
+        text
+    );
 
     // Session should have messages now
     let session = runtime.sessions().get(&session_key).unwrap();
@@ -323,7 +363,10 @@ async fn agent_runtime_simple_text_turn() {
 async fn agent_runtime_with_tool_call() {
     let api_key = match load_api_key() {
         Some(k) => k,
-        None => { eprintln!("SKIP: no ANTHROPIC_API_KEY"); return; }
+        None => {
+            eprintln!("SKIP: no ANTHROPIC_API_KEY");
+            return;
+        }
     };
 
     // Create a workspace with a file to read
@@ -335,20 +378,24 @@ async fn agent_runtime_with_tool_call() {
     let config = AgentConfig {
         default_model: "claude-haiku-4-5-20251001".into(),
         max_tool_iterations: 5,
-        system_prompt: Some("You have access to tools. Use the read tool to read files when asked.".into()),
+        system_prompt: Some(
+            "You have access to tools. Use the read tool to read files when asked.".into(),
+        ),
         workspace_root: ws.clone(),
-                sleep_threshold_pct: 1.0,
+        sleep_threshold_pct: 1.0,
     };
     let runtime = AgentRuntime::new(&api_key, tools, config);
 
     let session_key = SessionKey::new("test-tools");
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
 
-    let result = runtime.run_turn(
-        &session_key,
-        "Read the file secret.txt and tell me what it says.",
-        event_tx,
-    ).await;
+    let result = runtime
+        .run_turn(
+            &session_key,
+            "Read the file secret.txt and tell me what it says.",
+            event_tx,
+        )
+        .await;
     assert!(result.is_ok(), "run_turn failed: {:?}", result);
 
     let mut text = String::new();
@@ -363,12 +410,21 @@ async fn agent_runtime_with_tool_call() {
                 got_tool_call = true;
                 assert_eq!(name, "read");
             }
-            AgentEvent::ToolResult { result, is_error, .. } => {
+            AgentEvent::ToolResult {
+                result, is_error, ..
+            } => {
                 got_tool_result = true;
                 assert!(!is_error, "Tool returned error: {}", result);
-                assert!(result.contains("42"), "Tool result should contain '42': {}", result);
+                assert!(
+                    result.contains("42"),
+                    "Tool result should contain '42': {}",
+                    result
+                );
             }
-            AgentEvent::Done { .. } => { got_done = true; break; }
+            AgentEvent::Done { .. } => {
+                got_done = true;
+                break;
+            }
             AgentEvent::Error(e) => panic!("Agent error: {}", e),
             _ => {}
         }
@@ -377,7 +433,11 @@ async fn agent_runtime_with_tool_call() {
     assert!(got_tool_call, "Expected a tool call");
     assert!(got_tool_result, "Expected a tool result");
     assert!(got_done, "Expected Done");
-    assert!(text.contains("42"), "Final response should mention 42: {}", text);
+    assert!(
+        text.contains("42"),
+        "Final response should mention 42: {}",
+        text
+    );
 
     let _ = std::fs::remove_dir_all(&ws);
 }
@@ -386,7 +446,10 @@ async fn agent_runtime_with_tool_call() {
 async fn agent_runtime_max_iterations_enforced() {
     let api_key = match load_api_key() {
         Some(k) => k,
-        None => { eprintln!("SKIP: no ANTHROPIC_API_KEY"); return; }
+        None => {
+            eprintln!("SKIP: no ANTHROPIC_API_KEY");
+            return;
+        }
     };
 
     // Give tools but set max iterations to 1 — the agent should stop after 1 tool loop
@@ -399,7 +462,7 @@ async fn agent_runtime_max_iterations_enforced() {
         max_tool_iterations: 1,
         system_prompt: None,
         workspace_root: ws.clone(),
-                sleep_threshold_pct: 1.0,
+        sleep_threshold_pct: 1.0,
     };
     let runtime = AgentRuntime::new(&api_key, tools, config);
 
@@ -407,13 +470,17 @@ async fn agent_runtime_max_iterations_enforced() {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
 
     // Ask something that would normally loop
-    let _ = runtime.run_turn(&session_key, "just say hello", event_tx).await;
+    let _ = runtime
+        .run_turn(&session_key, "just say hello", event_tx)
+        .await;
 
     // Drain events, should not panic or hang
     let mut event_count = 0;
     while let Some(_event) = event_rx.recv().await {
         event_count += 1;
-        if event_count > 100 { break; } // safety
+        if event_count > 100 {
+            break;
+        } // safety
     }
 
     let _ = std::fs::remove_dir_all(&ws);
@@ -422,34 +489,58 @@ async fn agent_runtime_max_iterations_enforced() {
 #[tokio::test]
 async fn tool_results_collected_in_single_message() {
     use agenticlaw_llm::{ContentBlock, LlmContent};
-    
+
     let session = agenticlaw_agent::Session::new(
         agenticlaw_agent::SessionKey::from("test-tool-collect".to_string()),
         Some("test"),
     );
-    
+
     // Add assistant message with 3 tool_use blocks
     let blocks = vec![
-        ContentBlock::ToolUse { id: "tool_A".into(), name: "bash".into(), input: serde_json::json!({}) },
-        ContentBlock::ToolUse { id: "tool_B".into(), name: "glob".into(), input: serde_json::json!({}) },
-        ContentBlock::ToolUse { id: "tool_C".into(), name: "read".into(), input: serde_json::json!({}) },
+        ContentBlock::ToolUse {
+            id: "tool_A".into(),
+            name: "bash".into(),
+            input: serde_json::json!({}),
+        },
+        ContentBlock::ToolUse {
+            id: "tool_B".into(),
+            name: "glob".into(),
+            input: serde_json::json!({}),
+        },
+        ContentBlock::ToolUse {
+            id: "tool_C".into(),
+            name: "read".into(),
+            input: serde_json::json!({}),
+        },
     ];
     session.add_assistant_with_tools(None, blocks).await;
-    
+
     // Add 3 tool results
     session.add_tool_result("tool_A", "result A", false).await;
     session.add_tool_result("tool_B", "result B", false).await;
     session.add_tool_result("tool_C", "result C", true).await;
-    
+
     let messages = session.get_messages().await;
     // Should be: system + assistant + ONE user message (not three)
     // system is index 0 (if set), assistant is index 1, user is index 2
     let user_msgs: Vec<_> = messages.iter().filter(|m| m.role == "user").collect();
-    assert_eq!(user_msgs.len(), 1, "Expected 1 user message, got {}", user_msgs.len());
-    
+    assert_eq!(
+        user_msgs.len(),
+        1,
+        "Expected 1 user message, got {}",
+        user_msgs.len()
+    );
+
     if let LlmContent::Blocks(blocks) = &user_msgs[0].content {
-        let result_count = blocks.iter().filter(|b| matches!(b, ContentBlock::ToolResult { .. })).count();
-        assert_eq!(result_count, 3, "Expected 3 tool_result blocks in single message, got {}", result_count);
+        let result_count = blocks
+            .iter()
+            .filter(|b| matches!(b, ContentBlock::ToolResult { .. }))
+            .count();
+        assert_eq!(
+            result_count, 3,
+            "Expected 3 tool_result blocks in single message, got {}",
+            result_count
+        );
     } else {
         panic!("Expected Blocks content");
     }

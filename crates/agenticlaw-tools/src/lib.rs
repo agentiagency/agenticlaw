@@ -8,7 +8,7 @@ pub mod registry;
 pub mod tools;
 
 pub use registry::{Tool, ToolRegistry, ToolResult};
-pub use tools::spawn::{SpawnTool, SpawnableRuntime, RuntimeHandle};
+pub use tools::spawn::{RuntimeHandle, SpawnTool, SpawnableRuntime};
 
 use std::path::Path;
 use std::sync::Arc;
@@ -57,7 +57,10 @@ pub fn create_default_registry_with_spawn(
 /// Only registers tools whose names appear in `allowed_tools`.
 /// Used by operator containers to enforce policy at the tool registration level.
 /// If a tool isn't registered, the LLM never sees it and can't call it.
-pub fn create_policy_registry(workspace_root: impl AsRef<Path>, allowed_tools: &[&str]) -> ToolRegistry {
+pub fn create_policy_registry(
+    workspace_root: impl AsRef<Path>,
+    allowed_tools: &[&str],
+) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     let root = workspace_root.as_ref();
 

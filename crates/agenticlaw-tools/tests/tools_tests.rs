@@ -6,9 +6,14 @@ use std::path::PathBuf;
 
 fn test_workspace() -> PathBuf {
     let id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("agenticlaw-tools-test-{}-{}", std::process::id(), id));
+    let dir = std::env::temp_dir().join(format!(
+        "agenticlaw-tools-test-{}-{}",
+        std::process::id(),
+        id
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -109,11 +114,20 @@ async fn registry_tool_has_schema() {
 async fn write_tool_creates_file() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("write", json!({
-        "path": "test_write.txt",
-        "content": "hello world"
-    })).await;
-    assert!(!result.is_error(), "Write failed: {}", result.to_content_string());
+    let result = reg
+        .execute(
+            "write",
+            json!({
+                "path": "test_write.txt",
+                "content": "hello world"
+            }),
+        )
+        .await;
+    assert!(
+        !result.is_error(),
+        "Write failed: {}",
+        result.to_content_string()
+    );
     let content = std::fs::read_to_string(ws.join("test_write.txt")).unwrap();
     assert_eq!(content, "hello world");
     cleanup(&ws);
@@ -123,10 +137,15 @@ async fn write_tool_creates_file() {
 async fn write_tool_creates_subdirectories() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("write", json!({
-        "path": "sub/dir/deep.txt",
-        "content": "nested"
-    })).await;
+    let result = reg
+        .execute(
+            "write",
+            json!({
+                "path": "sub/dir/deep.txt",
+                "content": "nested"
+            }),
+        )
+        .await;
     assert!(!result.is_error());
     assert!(ws.join("sub/dir/deep.txt").exists());
     cleanup(&ws);
@@ -174,7 +193,9 @@ async fn read_tool_with_offset_and_limit() {
     std::fs::write(ws.join("big.txt"), lines.join("\n")).unwrap();
     let reg = create_default_registry(&ws);
 
-    let result = reg.execute("read", json!({"path": "big.txt", "offset": 10, "limit": 5})).await;
+    let result = reg
+        .execute("read", json!({"path": "big.txt", "offset": 10, "limit": 5}))
+        .await;
     assert!(!result.is_error());
     let content = result.to_content_string();
     assert!(content.contains("line 10"));
@@ -188,7 +209,9 @@ async fn read_tool_with_offset_and_limit() {
 async fn read_tool_missing_file() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("read", json!({"path": "nonexistent.txt"})).await;
+    let result = reg
+        .execute("read", json!({"path": "nonexistent.txt"}))
+        .await;
     assert!(result.is_error());
     cleanup(&ws);
 }
@@ -210,8 +233,14 @@ async fn read_tool_path_escape_blocked() {
     std::fs::write(&outside, "secret").unwrap();
 
     let reg = create_default_registry(&ws);
-    let result = reg.execute("read", json!({"path": "../agenticlaw-outside.txt"})).await;
-    assert!(result.is_error(), "Should block path escape, got: {}", result.to_content_string());
+    let result = reg
+        .execute("read", json!({"path": "../agenticlaw-outside.txt"}))
+        .await;
+    assert!(
+        result.is_error(),
+        "Should block path escape, got: {}",
+        result.to_content_string()
+    );
     let _ = std::fs::remove_file(outside);
     cleanup(&ws);
 }
@@ -225,11 +254,16 @@ async fn edit_tool_replaces_text() {
     let ws = test_workspace();
     std::fs::write(ws.join("editable.txt"), "hello world").unwrap();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("edit", json!({
-        "path": "editable.txt",
-        "old_string": "world",
-        "new_string": "agenticlaw"
-    })).await;
+    let result = reg
+        .execute(
+            "edit",
+            json!({
+                "path": "editable.txt",
+                "old_string": "world",
+                "new_string": "agenticlaw"
+            }),
+        )
+        .await;
     assert!(!result.is_error());
     let content = std::fs::read_to_string(ws.join("editable.txt")).unwrap();
     assert_eq!(content, "hello agenticlaw");
@@ -241,11 +275,16 @@ async fn edit_tool_old_string_not_found() {
     let ws = test_workspace();
     std::fs::write(ws.join("edit2.txt"), "hello").unwrap();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("edit", json!({
-        "path": "edit2.txt",
-        "old_string": "nonexistent",
-        "new_string": "replaced"
-    })).await;
+    let result = reg
+        .execute(
+            "edit",
+            json!({
+                "path": "edit2.txt",
+                "old_string": "nonexistent",
+                "new_string": "replaced"
+            }),
+        )
+        .await;
     assert!(result.is_error());
     assert!(result.to_content_string().contains("not found"));
     cleanup(&ws);
@@ -255,8 +294,14 @@ async fn edit_tool_old_string_not_found() {
 async fn edit_tool_missing_params() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    assert!(reg.execute("edit", json!({"path": "f.txt"})).await.is_error());
-    assert!(reg.execute("edit", json!({"path": "f.txt", "old_string": "x"})).await.is_error());
+    assert!(reg
+        .execute("edit", json!({"path": "f.txt"}))
+        .await
+        .is_error());
+    assert!(reg
+        .execute("edit", json!({"path": "f.txt", "old_string": "x"}))
+        .await
+        .is_error());
     cleanup(&ws);
 }
 
@@ -280,7 +325,11 @@ async fn exec_tool_captures_exit_code() {
     let reg = create_default_registry(&ws);
     let result = reg.execute("bash", json!({"command": "exit 42"})).await;
     let content = result.to_content_string();
-    assert!(content.contains("42"), "Should contain exit code 42: {}", content);
+    assert!(
+        content.contains("42"),
+        "Should contain exit code 42: {}",
+        content
+    );
     cleanup(&ws);
 }
 
@@ -288,7 +337,9 @@ async fn exec_tool_captures_exit_code() {
 async fn exec_tool_captures_stderr() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("bash", json!({"command": "echo err >&2"})).await;
+    let result = reg
+        .execute("bash", json!({"command": "echo err >&2"}))
+        .await;
     let content = result.to_content_string();
     assert!(content.contains("err"));
     cleanup(&ws);
@@ -299,7 +350,9 @@ async fn bash_tool_runs_in_workspace() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
     let result = reg.execute("bash", json!({"command": "pwd"})).await;
-    assert!(result.to_content_string().contains(&ws.to_string_lossy().to_string()));
+    assert!(result
+        .to_content_string()
+        .contains(&ws.to_string_lossy().to_string()));
     cleanup(&ws);
 }
 
@@ -307,10 +360,15 @@ async fn bash_tool_runs_in_workspace() {
 async fn exec_tool_timeout() {
     let ws = test_workspace();
     let reg = create_default_registry(&ws);
-    let result = reg.execute("bash", json!({
-        "command": "sleep 60",
-        "timeout": 1
-    })).await;
+    let result = reg
+        .execute(
+            "bash",
+            json!({
+                "command": "sleep 60",
+                "timeout": 1
+            }),
+        )
+        .await;
     assert!(result.is_error());
     assert!(result.to_content_string().contains("timed out"));
     cleanup(&ws);
@@ -345,7 +403,12 @@ async fn write_read_edit_read_cycle() {
     let reg = create_default_registry(&ws);
 
     // Write
-    let r = reg.execute("write", json!({"path": "cycle.txt", "content": "alpha beta gamma"})).await;
+    let r = reg
+        .execute(
+            "write",
+            json!({"path": "cycle.txt", "content": "alpha beta gamma"}),
+        )
+        .await;
     assert!(!r.is_error());
 
     // Read
@@ -353,7 +416,12 @@ async fn write_read_edit_read_cycle() {
     assert!(r.to_content_string().contains("alpha beta gamma"));
 
     // Edit
-    let r = reg.execute("edit", json!({"path": "cycle.txt", "old_string": "beta", "new_string": "BETA"})).await;
+    let r = reg
+        .execute(
+            "edit",
+            json!({"path": "cycle.txt", "old_string": "beta", "new_string": "BETA"}),
+        )
+        .await;
     assert!(!r.is_error());
 
     // Read again

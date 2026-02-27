@@ -4,11 +4,11 @@
 //! OutputEvents to connected clients via broadcast subscription.
 
 use crate::auth::ResolvedAuth;
-use crate::rpc::{self, ConnectionContext, output_event_to_message};
-use axum::extract::ws::{Message as WsMessage, WebSocket};
-use futures::{SinkExt, StreamExt};
+use crate::rpc::{self, output_event_to_message, ConnectionContext};
 use agenticlaw_agent::{AgentRuntime, OutputEvent};
 use agenticlaw_core::{EventMessage, IncomingMessage, RpcResponse};
+use axum::extract::ws::{Message as WsMessage, WebSocket};
+use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
@@ -204,26 +204,31 @@ async fn handle_legacy_message(
     let mut responses = Vec::new();
 
     match msg {
-        ClientMessage::Auth { token } => {
-            match state.auth.verify_token(token.as_deref()) {
-                Ok(()) => {
-                    *authenticated = true;
-                    if let Ok(json) = serde_json::to_string(&ServerMessage::auth_ok()) {
-                        responses.push(json);
-                    }
-                    info!("Client authenticated (legacy)");
+        ClientMessage::Auth { token } => match state.auth.verify_token(token.as_deref()) {
+            Ok(()) => {
+                *authenticated = true;
+                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_ok()) {
+                    responses.push(json);
                 }
-                Err(e) => {
-                    if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed(e.to_string())) {
-                        responses.push(json);
-                    }
-                    warn!("Auth failed: {}", e);
-                }
+                info!("Client authenticated (legacy)");
             }
-        }
-        ClientMessage::Chat { session, message, model } => {
+            Err(e) => {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed(e.to_string()))
+                {
+                    responses.push(json);
+                }
+                warn!("Auth failed: {}", e);
+            }
+        },
+        ClientMessage::Chat {
+            session,
+            message,
+            model,
+        } => {
             if !*authenticated {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::auth_failed("not authenticated")) {
+                if let Ok(json) =
+                    serde_json::to_string(&ServerMessage::auth_failed("not authenticated"))
+                {
                     responses.push(json);
                 }
                 return responses;
@@ -250,7 +255,9 @@ async fn handle_legacy_message(
         }
         ClientMessage::Call { id, method, params } => {
             if !*authenticated {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::result_error(&id, "not authenticated")) {
+                if let Ok(json) =
+                    serde_json::to_string(&ServerMessage::result_error(&id, "not authenticated"))
+                {
                     responses.push(json);
                 }
                 return responses;

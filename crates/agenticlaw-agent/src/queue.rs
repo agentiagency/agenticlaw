@@ -8,11 +8,9 @@
 //! Human messages ALWAYS preempt tool calls (park tools, cancel LLM stream).
 
 use crate::session::{Session, SessionKey, SessionRegistry};
-use futures::StreamExt;
-use agenticlaw_llm::{
-    AccumulatedToolCall, ContentBlock, LlmProvider, LlmRequest, StreamDelta,
-};
+use agenticlaw_llm::{AccumulatedToolCall, ContentBlock, LlmProvider, LlmRequest, StreamDelta};
 use agenticlaw_tools::{ToolRegistry, ToolResult};
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
@@ -116,15 +114,37 @@ pub enum OutputEvent {
     /// Thinking content
     Thinking { session: String, content: String },
     /// Tool call started
-    ToolCall { session: String, id: String, name: String },
+    ToolCall {
+        session: String,
+        id: String,
+        name: String,
+    },
     /// Tool call arguments streaming
-    ToolCallDelta { session: String, id: String, arguments: String },
+    ToolCallDelta {
+        session: String,
+        id: String,
+        arguments: String,
+    },
     /// Tool executing
-    ToolExecuting { session: String, id: String, name: String },
+    ToolExecuting {
+        session: String,
+        id: String,
+        name: String,
+    },
     /// Tool result
-    ToolResult { session: String, id: String, name: String, result: String, is_error: bool },
+    ToolResult {
+        session: String,
+        id: String,
+        name: String,
+        result: String,
+        is_error: bool,
+    },
     /// Tool parked (interrupted by human)
-    ToolParked { session: String, id: String, name: String },
+    ToolParked {
+        session: String,
+        id: String,
+        name: String,
+    },
     /// Turn complete
     Done { session: String },
     /// Error
@@ -227,7 +247,11 @@ impl ConsciousnessLoop {
         tools: Arc<ToolRegistry>,
         sessions: Arc<SessionRegistry>,
         config: ConsciousnessLoopConfig,
-    ) -> (Self, mpsc::Sender<QueueEvent>, broadcast::Sender<OutputEvent>) {
+    ) -> (
+        Self,
+        mpsc::Sender<QueueEvent>,
+        broadcast::Sender<OutputEvent>,
+    ) {
         let (queue_tx, queue_rx) = mpsc::channel(1024);
         let (output_tx, _) = broadcast::channel(1024);
 
@@ -263,16 +287,32 @@ impl ConsciousnessLoop {
             };
 
             match event {
-                QueueEvent::HumanMessage { session, content, .. } => {
+                QueueEvent::HumanMessage {
+                    session, content, ..
+                } => {
                     self.handle_human_message(session, content).await;
                 }
 
-                QueueEvent::ToolResult { session, tool_use_id, name, result, is_error } => {
-                    self.handle_tool_result(session, tool_use_id, name, result, is_error).await;
+                QueueEvent::ToolResult {
+                    session,
+                    tool_use_id,
+                    name,
+                    result,
+                    is_error,
+                } => {
+                    self.handle_tool_result(session, tool_use_id, name, result, is_error)
+                        .await;
                 }
 
-                QueueEvent::LlmComplete { session, text, tool_calls, stop_reason, request_id } => {
-                    self.handle_llm_complete(session, text, tool_calls, stop_reason, request_id).await;
+                QueueEvent::LlmComplete {
+                    session,
+                    text,
+                    tool_calls,
+                    stop_reason,
+                    request_id,
+                } => {
+                    self.handle_llm_complete(session, text, tool_calls, stop_reason, request_id)
+                        .await;
                 }
 
                 QueueEvent::CascadeDelta { session, delta, .. } => {
@@ -282,12 +322,21 @@ impl ConsciousnessLoop {
 
                 QueueEvent::Injection { content, .. } => {
                     // Store pending injection for next LLM call
-                    debug!("Injection received ({} chars), will be included in next LLM call", content.len());
+                    debug!(
+                        "Injection received ({} chars), will be included in next LLM call",
+                        content.len()
+                    );
                 }
 
-                QueueEvent::Sleep { session, token_count } => {
+                QueueEvent::Sleep {
+                    session,
+                    token_count,
+                } => {
                     let session_str = session.as_str().to_string();
-                    let _ = self.output_tx.send(OutputEvent::Sleep { session: session_str, token_count });
+                    let _ = self.output_tx.send(OutputEvent::Sleep {
+                        session: session_str,
+                        token_count,
+                    });
                 }
 
                 QueueEvent::Shutdown => {
@@ -312,7 +361,8 @@ impl ConsciousnessLoop {
     async fn recv_with_priority(&mut self) -> Option<QueueEvent> {
         // If priority buffer has events from a previous drain, use those first
         if !self.priority_buffer.is_empty() {
-            self.priority_buffer.sort_by_key(|e| std::cmp::Reverse(e.priority()));
+            self.priority_buffer
+                .sort_by_key(|e| std::cmp::Reverse(e.priority()));
             return Some(self.priority_buffer.remove(0));
         }
 
@@ -326,7 +376,8 @@ impl ConsciousnessLoop {
         }
 
         // Sort: highest priority first
-        self.priority_buffer.sort_by_key(|e| std::cmp::Reverse(e.priority()));
+        self.priority_buffer
+            .sort_by_key(|e| std::cmp::Reverse(e.priority()));
         Some(self.priority_buffer.remove(0))
     }
 
@@ -347,11 +398,13 @@ impl ConsciousnessLoop {
 
         // 4. Add message to session
         let sess = self.get_session(&session);
-        let should_sleep = sess.add_user_message(
-            &content,
-            self.config.sleep_threshold_pct,
-            self.config.max_context_tokens,
-        ).await;
+        let should_sleep = sess
+            .add_user_message(
+                &content,
+                self.config.sleep_threshold_pct,
+                self.config.max_context_tokens,
+            )
+            .await;
 
         if should_sleep {
             let token_count = sess.token_count().await;
@@ -442,17 +495,16 @@ impl ConsciousnessLoop {
             });
         } else {
             // Save assistant message with tool calls
-            let blocks: Vec<ContentBlock> = tool_calls.iter().map(|tc| {
-                ContentBlock::ToolUse {
+            let blocks: Vec<ContentBlock> = tool_calls
+                .iter()
+                .map(|tc| ContentBlock::ToolUse {
                     id: tc.id.clone(),
                     name: tc.name.clone(),
                     input: tc.parse_arguments().unwrap_or_default(),
-                }
-            }).collect();
-            sess.add_assistant_with_tools(
-                text.as_deref().filter(|t| !t.is_empty()),
-                blocks,
-            ).await;
+                })
+                .collect();
+            sess.add_assistant_with_tools(text.as_deref().filter(|t| !t.is_empty()), blocks)
+                .await;
 
             // Launch tools
             for tc in tool_calls {
@@ -465,7 +517,9 @@ impl ConsciousnessLoop {
     async fn start_llm_call(&mut self, session_key: &SessionKey) {
         let sess = self.get_session(session_key);
         let messages = sess.get_messages().await;
-        let model = sess.model().await
+        let model = sess
+            .model()
+            .await
             .unwrap_or_else(|| self.config.default_model.clone());
 
         let request = LlmRequest {
@@ -583,13 +637,19 @@ impl ConsciousnessLoop {
             }
 
             // Stream finished naturally — submit LlmComplete
-            let _ = queue_tx.send(QueueEvent::LlmComplete {
-                session: sk,
-                text: if text_content.is_empty() { None } else { Some(text_content) },
-                tool_calls,
-                stop_reason,
-                request_id,
-            }).await;
+            let _ = queue_tx
+                .send(QueueEvent::LlmComplete {
+                    session: sk,
+                    text: if text_content.is_empty() {
+                        None
+                    } else {
+                        Some(text_content)
+                    },
+                    tool_calls,
+                    stop_reason,
+                    request_id,
+                })
+                .await;
         });
     }
 
@@ -618,34 +678,45 @@ impl ConsciousnessLoop {
             let tool_name = tc.name.clone();
 
             // Execute with cancellation
-            let result = tools.execute_cancellable(&tool_name, args, cancel_clone).await;
+            let result = tools
+                .execute_cancellable(&tool_name, args, cancel_clone)
+                .await;
 
             let is_error = result.is_error();
             let result_str = result.to_content_string();
             let result_str = if result_str.len() > 50000 {
-                format!("{}...\n[truncated, {} total chars]", &result_str[..50000], result_str.len())
+                format!(
+                    "{}...\n[truncated, {} total chars]",
+                    &result_str[..50000],
+                    result_str.len()
+                )
             } else {
                 result_str
             };
 
-            let _ = queue_tx.send(QueueEvent::ToolResult {
-                session: session_key,
-                tool_use_id: spawn_id,
-                name: spawn_name,
-                result: result_str,
-                is_error,
-            }).await;
+            let _ = queue_tx
+                .send(QueueEvent::ToolResult {
+                    session: session_key,
+                    tool_use_id: spawn_id,
+                    name: spawn_name,
+                    result: result_str,
+                    is_error,
+                })
+                .await;
 
             result
         });
 
-        self.active_tools.insert(tc_id.clone(), ToolHandle {
-            id: tc_id,
-            name: tc_name,
-            cancel,
-            join,
-            state: ToolState::Running,
-        });
+        self.active_tools.insert(
+            tc_id.clone(),
+            ToolHandle {
+                id: tc_id,
+                name: tc_name,
+                cancel,
+                join,
+                state: ToolState::Running,
+            },
+        );
     }
 
     /// Park (cancel) all active tools. Drains the active_tools map.
@@ -654,7 +725,9 @@ impl ConsciousnessLoop {
         for (_, handle) in tools {
             if handle.state == ToolState::Running {
                 handle.cancel.cancel();
-                let session_str = self.current_session.as_ref()
+                let session_str = self
+                    .current_session
+                    .as_ref()
                     .map(|s| s.as_str().to_string())
                     .unwrap_or_default();
                 let _ = self.output_tx.send(OutputEvent::ToolParked {

@@ -21,7 +21,10 @@ pub async fn listen_stdin(tx: mpsc::Sender<ConductorCommand>) {
                 }
             }
             Err(e) => {
-                log::warn("invalid_command", serde_json::json!({"error": e.to_string(), "input": line}));
+                log::warn(
+                    "invalid_command",
+                    serde_json::json!({"error": e.to_string(), "input": line}),
+                );
             }
         }
     }

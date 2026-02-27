@@ -11,10 +11,7 @@ use agenticlaw::session::Session;
 use agenticlaw::transform::{self, SessionEvent, TurnContent};
 
 fn load_fixture(name: &str) -> String {
-    let path = format!(
-        "{}/tests/fixtures/{name}",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read fixture {name}: {e}"))
 }
 
@@ -98,7 +95,11 @@ fn real_session_preserves_user_messages() {
         .iter()
         .filter_map(|e| {
             if let SessionEvent::Turn(t) = e {
-                if t.role == "user" { Some(t) } else { None }
+                if t.role == "user" {
+                    Some(t)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -108,12 +109,20 @@ fn real_session_preserves_user_messages() {
     assert_eq!(user_turns.len(), 2, "Expected 2 user turns");
     // First user message should contain the implementation request
     let first_text = user_turns[0].contents.iter().find_map(|c| {
-        if let TurnContent::Text(t) = c { Some(t.as_str()) } else { None }
+        if let TurnContent::Text(t) = c {
+            Some(t.as_str())
+        } else {
+            None
+        }
     });
     assert!(first_text.unwrap().contains("--watch"));
     // Second user message is "commit this"
     let second_text = user_turns[1].contents.iter().find_map(|c| {
-        if let TurnContent::Text(t) = c { Some(t.as_str()) } else { None }
+        if let TurnContent::Text(t) = c {
+            Some(t.as_str())
+        } else {
+            None
+        }
     });
     assert!(second_text.unwrap().contains("commit"));
 }
@@ -135,10 +144,24 @@ fn real_session_preserves_tool_interactions() {
         }
     }
 
-    assert!(tool_names.contains(&"read".to_string()), "Missing read tool");
-    assert!(tool_names.contains(&"write".to_string()), "Missing write tool");
-    assert!(tool_names.contains(&"bash".to_string()), "Missing bash tool");
-    assert_eq!(tool_names.len(), 5, "Expected 5 tool calls, got {}", tool_names.len());
+    assert!(
+        tool_names.contains(&"read".to_string()),
+        "Missing read tool"
+    );
+    assert!(
+        tool_names.contains(&"write".to_string()),
+        "Missing write tool"
+    );
+    assert!(
+        tool_names.contains(&"bash".to_string()),
+        "Missing bash tool"
+    );
+    assert_eq!(
+        tool_names.len(),
+        5,
+        "Expected 5 tool calls, got {}",
+        tool_names.len()
+    );
 }
 
 #[test]
@@ -155,7 +178,8 @@ fn real_session_preserves_tool_results() {
                     if tool.name == "read" {
                         let result = tool.result.as_ref().expect("read tool should have result");
                         assert!(
-                            result.content.contains("mod format") || result.content.contains("Parser"),
+                            result.content.contains("mod format")
+                                || result.content.contains("Parser"),
                             "read result should contain file content, got: {}",
                             &result.content[..result.content.len().min(100)]
                         );
@@ -195,7 +219,10 @@ fn real_session_preserves_model_change() {
         .events
         .iter()
         .filter_map(|e| {
-            if let SessionEvent::ModelChange { model_id, provider, .. } = e {
+            if let SessionEvent::ModelChange {
+                model_id, provider, ..
+            } = e
+            {
                 Some((model_id.as_str(), provider.as_str()))
             } else {
                 None
@@ -267,7 +294,9 @@ fn context_distinguishes_input_from_output() {
     assert!(in_up.iter().any(|s| s.contains("commit")));
 
     // Assistant text should NOT be inside <up> tags
-    assert!(!in_up.iter().any(|s| s.contains("Compiles with one warning")));
+    assert!(!in_up
+        .iter()
+        .any(|s| s.contains("Compiles with one warning")));
 }
 
 #[test]
@@ -289,7 +318,10 @@ fn context_with_thinking_provides_reasoning_chain() {
     let events = fixture_to_events("real-session.jsonl");
     let ctx = context::emit(
         &events,
-        &EmitOptions { include_thinking: true, ..Default::default() },
+        &EmitOptions {
+            include_thinking: true,
+            ..Default::default()
+        },
     );
 
     assert!(ctx.contains("[thinking]"));
@@ -299,7 +331,9 @@ fn context_with_thinking_provides_reasoning_chain() {
     let parsed = context::parse(&ctx);
     let has_thinking = parsed.events.iter().any(|e| {
         if let SessionEvent::Turn(t) = e {
-            t.contents.iter().any(|c| matches!(c, TurnContent::Thinking(_)))
+            t.contents
+                .iter()
+                .any(|c| matches!(c, TurnContent::Thinking(_)))
         } else {
             false
         }

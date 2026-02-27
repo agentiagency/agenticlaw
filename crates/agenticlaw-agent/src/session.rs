@@ -2,8 +2,8 @@
 
 use crate::context::ContextManager;
 use crate::ctx_file;
+use agenticlaw_llm::{ContentBlock, LlmContent, LlmMessage};
 use dashmap::DashMap;
-use agenticlaw_llm::{LlmMessage, LlmContent, ContentBlock};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -18,11 +18,17 @@ pub struct SessionRegistry {
 }
 
 impl Default for SessionRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionRegistry {
-    pub fn new() -> Self { Self { sessions: DashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            sessions: DashMap::new(),
+        }
+    }
 
     /// Create a session with .ctx persistence. Discovers SOUL.md/AGENTS.md in workspace.
     pub fn create_with_ctx(
@@ -64,7 +70,12 @@ impl SessionRegistry {
                     tracing::error!("Failed to create .ctx file: {}", e);
                 }
 
-                info!("Session {} created: {} ({} preload files)", session_id, ctx_path.display(), preload.len());
+                info!(
+                    "Session {} created: {} ({} preload files)",
+                    session_id,
+                    ctx_path.display(),
+                    preload.len()
+                );
 
                 Arc::new(Session::new_with_ctx(
                     key.clone(),
@@ -76,10 +87,7 @@ impl SessionRegistry {
     }
 
     /// Resume a session from an existing .ctx file.
-    pub fn resume_from_ctx(
-        &self,
-        resumed: &ctx_file::ResumedSession,
-    ) -> Arc<Session> {
+    pub fn resume_from_ctx(&self, resumed: &ctx_file::ResumedSession) -> Arc<Session> {
         let key = SessionKey::new(&resumed.session_id);
         self.sessions
             .entry(key.clone())
@@ -113,7 +121,12 @@ impl SessionRegistry {
                     });
                 }
 
-                info!("Resumed session {} from {} ({} messages)", resumed.session_id, resumed.ctx_path.display(), count);
+                info!(
+                    "Resumed session {} from {} ({} messages)",
+                    resumed.session_id,
+                    resumed.ctx_path.display(),
+                    count
+                );
                 session
             })
             .clone()
@@ -155,10 +168,16 @@ impl Session {
         Self::new_with_ctx(key, system_prompt, None)
     }
 
-    pub fn new_with_ctx(key: SessionKey, system_prompt: Option<&str>, ctx_path: Option<PathBuf>) -> Self {
+    pub fn new_with_ctx(
+        key: SessionKey,
+        system_prompt: Option<&str>,
+        ctx_path: Option<PathBuf>,
+    ) -> Self {
         let (abort_tx, abort_rx) = mpsc::channel(1);
         let mut context = ContextManager::new(128_000);
-        if let Some(sys) = system_prompt { context.set_system(sys); }
+        if let Some(sys) = system_prompt {
+            context.set_system(sys);
+        }
         Self {
             key,
             system_prompt: RwLock::new(system_prompt.map(String::from)),
@@ -181,7 +200,9 @@ impl Session {
         self.ctx_path.as_ref().and_then(|p| ctx_file::read(p).ok())
     }
 
-    pub async fn system_prompt(&self) -> Option<String> { self.system_prompt.read().await.clone() }
+    pub async fn system_prompt(&self) -> Option<String> {
+        self.system_prompt.read().await.clone()
+    }
 
     pub async fn set_system_prompt(&self, prompt: &str) {
         *self.system_prompt.write().await = Some(prompt.to_string());
@@ -192,8 +213,16 @@ impl Session {
     /// (context limit reached), `false` otherwise.
     /// Add a user message. Returns true if estimated tokens exceed the sleep threshold
     /// (pct * max_context_tokens), signaling the layer should sleep.
-    pub async fn add_user_message(&self, content: &str, sleep_threshold_pct: f64, max_context_tokens: usize) -> bool {
-        let message = LlmMessage { role: "user".to_string(), content: LlmContent::Text(content.to_string()) };
+    pub async fn add_user_message(
+        &self,
+        content: &str,
+        sleep_threshold_pct: f64,
+        max_context_tokens: usize,
+    ) -> bool {
+        let message = LlmMessage {
+            role: "user".to_string(),
+            content: LlmContent::Text(content.to_string()),
+        };
         let mut messages = self.messages.write().await;
         messages.push(message);
 
@@ -206,8 +235,13 @@ impl Session {
         let total = context.calculate_total(&messages);
         let sleep_threshold = (sleep_threshold_pct * max_context_tokens as f64) as usize;
         if total > sleep_threshold {
-            info!("Session {} hit {}k tokens ({:.0}% of {}k) — signaling sleep",
-                self.key, total / 1000, (total as f64 / max_context_tokens as f64) * 100.0, max_context_tokens / 1000);
+            info!(
+                "Session {} hit {}k tokens ({:.0}% of {}k) — signaling sleep",
+                self.key,
+                total / 1000,
+                (total as f64 / max_context_tokens as f64) * 100.0,
+                max_context_tokens / 1000
+            );
             true
         } else {
             false
@@ -215,7 +249,10 @@ impl Session {
     }
 
     pub async fn add_assistant_text(&self, content: &str) {
-        let message = LlmMessage { role: "assistant".to_string(), content: LlmContent::Text(content.to_string()) };
+        let message = LlmMessage {
+            role: "assistant".to_string(),
+            content: LlmContent::Text(content.to_string()),
+        };
         self.messages.write().await.push(message);
 
         if let Some(ref path) = self.ctx_path {
@@ -223,13 +260,24 @@ impl Session {
         }
     }
 
-    pub async fn add_assistant_with_tools(&self, text: Option<&str>, tool_calls: Vec<ContentBlock>) {
+    pub async fn add_assistant_with_tools(
+        &self,
+        text: Option<&str>,
+        tool_calls: Vec<ContentBlock>,
+    ) {
         let mut blocks = Vec::new();
         if let Some(t) = text {
-            if !t.is_empty() { blocks.push(ContentBlock::Text { text: t.to_string() }); }
+            if !t.is_empty() {
+                blocks.push(ContentBlock::Text {
+                    text: t.to_string(),
+                });
+            }
         }
         blocks.extend(tool_calls.clone());
-        let message = LlmMessage { role: "assistant".to_string(), content: LlmContent::Blocks(blocks) };
+        let message = LlmMessage {
+            role: "assistant".to_string(),
+            content: LlmContent::Blocks(blocks),
+        };
         self.messages.write().await.push(message);
 
         // Persist: write text + tool calls to .ctx
@@ -244,7 +292,8 @@ impl Session {
             }
             for tc in &tool_calls {
                 if let ContentBlock::ToolUse { name, input, .. } = tc {
-                    let summary = input.as_object()
+                    let summary = input
+                        .as_object()
                         .and_then(|o| o.iter().next())
                         .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(&v.to_string())))
                         .unwrap_or_default();
@@ -270,41 +319,75 @@ impl Session {
         let appended = if let Some(last) = messages.last_mut() {
             if last.role == "user" {
                 if let LlmContent::Blocks(ref mut blocks) = last.content {
-                    if blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })) {
+                    if blocks
+                        .iter()
+                        .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+                    {
                         blocks.push(block.clone());
                         true
-                    } else { false }
-                } else { false }
-            } else { false }
-        } else { false };
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
         if !appended {
-            messages.push(LlmMessage { role: "user".to_string(), content: LlmContent::Blocks(vec![block]) });
+            messages.push(LlmMessage {
+                role: "user".to_string(),
+                content: LlmContent::Blocks(vec![block]),
+            });
         }
         drop(messages);
 
         // Tool results are <up> in .ctx — they're input to the model from outside
         if let Some(ref path) = self.ctx_path {
-            let _ = ctx_file::append_tool_result(path, &ctx_file::now_timestamp(), "result", content, is_error);
+            let _ = ctx_file::append_tool_result(
+                path,
+                &ctx_file::now_timestamp(),
+                "result",
+                content,
+                is_error,
+            );
         }
     }
 
-    pub async fn get_messages(&self) -> Vec<LlmMessage> { self.messages.read().await.clone() }
-    pub async fn messages_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, Vec<LlmMessage>> { self.messages.write().await }
-    pub async fn message_count(&self) -> usize { self.messages.read().await.len() }
+    pub async fn get_messages(&self) -> Vec<LlmMessage> {
+        self.messages.read().await.clone()
+    }
+    pub async fn messages_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, Vec<LlmMessage>> {
+        self.messages.write().await
+    }
+    pub async fn message_count(&self) -> usize {
+        self.messages.read().await.len()
+    }
 
     pub async fn token_count(&self) -> usize {
         let messages = self.messages.read().await;
         self.context.read().await.calculate_total(&messages)
     }
 
-    pub async fn model(&self) -> Option<String> { self.model.read().await.clone() }
-    pub async fn set_model(&self, model: &str) { *self.model.write().await = Some(model.to_string()); }
-    pub async fn abort(&self) { let _ = self.abort_tx.send(()).await; }
+    pub async fn model(&self) -> Option<String> {
+        self.model.read().await.clone()
+    }
+    pub async fn set_model(&self, model: &str) {
+        *self.model.write().await = Some(model.to_string());
+    }
+    pub async fn abort(&self) {
+        let _ = self.abort_tx.send(()).await;
+    }
 
     pub async fn take_abort_rx(&self) -> Option<mpsc::Receiver<()>> {
         self.abort_rx.write().await.take()
     }
 
-    pub async fn clear(&self) { self.messages.write().await.clear(); }
+    pub async fn clear(&self) {
+        self.messages.write().await.clear();
+    }
 }

@@ -86,14 +86,17 @@ impl RunManifest {
     }
 
     pub fn add_node(&mut self, addr: &str, state: NodeState) {
-        self.nodes.insert(addr.into(), NodeStatus {
-            status: state,
-            session_key: None,
-            tokens: 0,
-            wall_ms: 0,
-            started: None,
-            ended: None,
-        });
+        self.nodes.insert(
+            addr.into(),
+            NodeStatus {
+                status: state,
+                session_key: None,
+                tokens: 0,
+                wall_ms: 0,
+                started: None,
+                ended: None,
+            },
+        );
     }
 
     pub fn update_node(&mut self, addr: &str, state: NodeState) {
@@ -125,7 +128,9 @@ impl RunManifest {
         self.outcome = outcome;
         self.ended = Some(Utc::now());
         self.total_tokens = self.nodes.values().map(|n| n.tokens).sum();
-        self.total_wall_ms = (self.ended.unwrap() - self.started).num_milliseconds().max(0) as u64;
+        self.total_wall_ms = (self.ended.unwrap() - self.started)
+            .num_milliseconds()
+            .max(0) as u64;
     }
 
     pub fn to_yaml(&self) -> String {
@@ -157,7 +162,10 @@ mod tests {
         m.add_node("/root/issue/183/pr", NodeState::Blocked);
 
         m.start_node("/root/issue/183/analysis", Some("sess-123".into()));
-        assert_eq!(m.nodes["/root/issue/183/analysis"].status, NodeState::Running);
+        assert_eq!(
+            m.nodes["/root/issue/183/analysis"].status,
+            NodeState::Running
+        );
 
         m.finish_node("/root/issue/183/analysis", NodeState::Success, 5000);
         assert_eq!(m.nodes["/root/issue/183/analysis"].tokens, 5000);

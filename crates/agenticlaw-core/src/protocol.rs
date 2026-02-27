@@ -48,7 +48,11 @@ pub struct RpcResponse {
 impl RpcResponse {
     /// Successful response with a result value.
     pub fn ok(id: impl Into<String>, result: serde_json::Value) -> Self {
-        Self { id: id.into(), result: Some(result), error: None }
+        Self {
+            id: id.into(),
+            result: Some(result),
+            error: None,
+        }
     }
 
     /// Error response.
@@ -56,7 +60,10 @@ impl RpcResponse {
         Self {
             id: id.into(),
             result: None,
-            error: Some(RpcError { code, message: message.into() }),
+            error: Some(RpcError {
+                code,
+                message: message.into(),
+            }),
         }
     }
 
@@ -96,14 +103,23 @@ pub struct EventMessage {
 
 impl EventMessage {
     pub fn new(event: impl Into<String>, data: serde_json::Value) -> Self {
-        Self { event: event.into(), data }
+        Self {
+            event: event.into(),
+            data,
+        }
     }
 
     /// Create a chat event.
     pub fn chat(session: &str, event_type: &str, data: serde_json::Value) -> Self {
         let mut map = serde_json::Map::new();
-        map.insert("session".to_string(), serde_json::Value::String(session.to_string()));
-        map.insert("type".to_string(), serde_json::Value::String(event_type.to_string()));
+        map.insert(
+            "session".to_string(),
+            serde_json::Value::String(session.to_string()),
+        );
+        map.insert(
+            "type".to_string(),
+            serde_json::Value::String(event_type.to_string()),
+        );
         for (k, v) in data.as_object().cloned().unwrap_or_default() {
             map.insert(k, v);
         }
@@ -117,27 +133,49 @@ impl EventMessage {
 
     /// Chat thinking event.
     pub fn chat_thinking(session: &str, content: &str) -> Self {
-        Self::chat(session, "thinking", serde_json::json!({ "content": content }))
+        Self::chat(
+            session,
+            "thinking",
+            serde_json::json!({ "content": content }),
+        )
     }
 
     /// Chat tool_call event.
     pub fn chat_tool_call(session: &str, id: &str, name: &str) -> Self {
-        Self::chat(session, "tool_call", serde_json::json!({ "id": id, "name": name }))
+        Self::chat(
+            session,
+            "tool_call",
+            serde_json::json!({ "id": id, "name": name }),
+        )
     }
 
     /// Chat tool_call_delta event.
     pub fn chat_tool_call_delta(session: &str, id: &str, arguments: &str) -> Self {
-        Self::chat(session, "tool_call_delta", serde_json::json!({ "id": id, "arguments": arguments }))
+        Self::chat(
+            session,
+            "tool_call_delta",
+            serde_json::json!({ "id": id, "arguments": arguments }),
+        )
     }
 
     /// Chat tool_result event.
-    pub fn chat_tool_result(session: &str, id: &str, name: &str, result: &str, is_error: bool) -> Self {
-        Self::chat(session, "tool_result", serde_json::json!({
-            "id": id,
-            "name": name,
-            "content": result,
-            "is_error": is_error,
-        }))
+    pub fn chat_tool_result(
+        session: &str,
+        id: &str,
+        name: &str,
+        result: &str,
+        is_error: bool,
+    ) -> Self {
+        Self::chat(
+            session,
+            "tool_result",
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "content": result,
+                "is_error": is_error,
+            }),
+        )
     }
 
     /// Chat done event.
@@ -157,12 +195,19 @@ impl EventMessage {
 
     /// Info event (sent on connection).
     pub fn info(version: &str, layer: Option<&str>) -> Self {
-        Self::new("info", serde_json::json!({ "version": version, "layer": layer }))
+        Self::new(
+            "info",
+            serde_json::json!({ "version": version, "layer": layer }),
+        )
     }
 
     /// Tool parked event.
     pub fn tool_parked(session: &str, id: &str, name: &str) -> Self {
-        Self::chat(session, "tool_parked", serde_json::json!({ "id": id, "name": name }))
+        Self::chat(
+            session,
+            "tool_parked",
+            serde_json::json!({ "id": id, "name": name }),
+        )
     }
 
     /// Pong event.
@@ -265,35 +310,60 @@ pub enum ServerMessage {
     Pong,
 
     #[serde(rename = "info")]
-    Info { version: String, layer: Option<String> },
+    Info {
+        version: String,
+        layer: Option<String>,
+    },
 }
 
 impl ServerMessage {
     pub fn auth_ok() -> Self {
-        Self::AuthResult { ok: true, error: None }
+        Self::AuthResult {
+            ok: true,
+            error: None,
+        }
     }
 
     pub fn auth_failed(reason: impl Into<String>) -> Self {
-        Self::AuthResult { ok: false, error: Some(reason.into()) }
+        Self::AuthResult {
+            ok: false,
+            error: Some(reason.into()),
+        }
     }
 
     pub fn delta(session: impl Into<String>, content: impl Into<String>) -> Self {
-        Self::Delta { session: session.into(), content: content.into() }
+        Self::Delta {
+            session: session.into(),
+            content: content.into(),
+        }
     }
 
     pub fn done(session: impl Into<String>) -> Self {
-        Self::Done { session: session.into() }
+        Self::Done {
+            session: session.into(),
+        }
     }
 
     pub fn error(session: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::Error { session: session.into(), message: message.into() }
+        Self::Error {
+            session: session.into(),
+            message: message.into(),
+        }
     }
 
     pub fn result_ok(id: impl Into<String>, result: serde_json::Value) -> Self {
-        Self::Result { id: id.into(), result: Some(result), error: None }
+        Self::Result {
+            id: id.into(),
+            result: Some(result),
+            error: None,
+        }
     }
 
     pub fn result_error(id: impl Into<String>, error: impl Into<String>) -> Self {
-        Self::Result { id: id.into(), result: None, error: Some(error.into()) }
+        Self::Result {
+            id: id.into(),
+            result: None,
+            error: Some(error.into()),
+        }
     }
 }

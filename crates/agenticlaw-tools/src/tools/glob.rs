@@ -13,20 +13,26 @@ pub struct GlobTool {
 
 impl GlobTool {
     pub fn new(workspace_root: impl AsRef<Path>) -> Self {
-        Self { workspace_root: workspace_root.as_ref().to_path_buf() }
+        Self {
+            workspace_root: workspace_root.as_ref().to_path_buf(),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Tool for GlobTool {
-    fn name(&self) -> &str { "glob" }
+    fn name(&self) -> &str {
+        "glob"
+    }
 
     fn description(&self) -> &str {
         "Find files matching a glob pattern. Supports ** for recursive matching. \
          Returns file paths sorted by modification time (newest first)."
     }
 
-    fn is_read_only(&self) -> bool { true }
+    fn is_read_only(&self) -> bool {
+        true
+    }
 
     fn input_schema(&self) -> Value {
         json!({
@@ -51,8 +57,15 @@ impl Tool for GlobTool {
             None => return ToolResult::error("Missing required parameter: pattern"),
         };
 
-        let search_root = args["path"].as_str()
-            .map(|p| if Path::new(p).is_absolute() { PathBuf::from(p) } else { self.workspace_root.join(p) })
+        let search_root = args["path"]
+            .as_str()
+            .map(|p| {
+                if Path::new(p).is_absolute() {
+                    PathBuf::from(p)
+                } else {
+                    self.workspace_root.join(p)
+                }
+            })
             .unwrap_or_else(|| self.workspace_root.clone());
 
         let glob = match GlobBuilder::new(pattern).literal_separator(false).build() {
@@ -72,10 +85,13 @@ impl Tool for GlobTool {
             .filter_map(|e| e.ok())
         {
             if entry.file_type().is_file() {
-                let rel_path = entry.path().strip_prefix(&search_root)
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(&search_root)
                     .unwrap_or(entry.path());
                 if glob.is_match(rel_path) {
-                    let mtime = entry.metadata()
+                    let mtime = entry
+                        .metadata()
                         .ok()
                         .and_then(|m| m.modified().ok())
                         .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
@@ -92,7 +108,8 @@ impl Tool for GlobTool {
         if matches.is_empty() {
             ToolResult::text("No files found")
         } else {
-            let result: Vec<String> = matches.iter()
+            let result: Vec<String> = matches
+                .iter()
                 .take(1000) // cap output
                 .map(|(p, _)| p.to_string_lossy().to_string())
                 .collect();

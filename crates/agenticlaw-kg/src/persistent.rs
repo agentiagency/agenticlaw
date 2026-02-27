@@ -8,8 +8,8 @@
 //! knowledge across runs: "Round 1 analysis was too broad. Round 2 impl
 //! touched wrong files. Thomson closed the PR. Try a different approach."
 
-use agenticlaw_agent::session::{SessionKey, SessionRegistry};
 use agenticlaw_agent::runtime::{AgentEvent, AgentRuntime};
+use agenticlaw_agent::session::{SessionKey, SessionRegistry};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -54,20 +54,14 @@ impl IssueNode {
             self.issue, self.repo
         );
 
-        runtime.sessions().create_with_ctx(
-            &self.session_key,
-            Some(&system_prompt),
-            &self.workspace,
-        )
+        runtime
+            .sessions()
+            .create_with_ctx(&self.session_key, Some(&system_prompt), &self.workspace)
     }
 
     /// Run a turn on the persistent node. The node decides what to do next
     /// based on its accumulated context.
-    pub async fn run_turn(
-        &self,
-        runtime: &AgentRuntime,
-        message: &str,
-    ) -> Result<String, String> {
+    pub async fn run_turn(&self, runtime: &AgentRuntime, message: &str) -> Result<String, String> {
         // Ensure session is loaded (idempotent — returns existing if already loaded)
         let _session = self.load_session(runtime);
 
@@ -107,7 +101,9 @@ impl IssueNode {
 
     /// Get the .ctx file path for this issue node.
     pub fn ctx_path(&self) -> PathBuf {
-        self.workspace.join(".ctx").join(format!("{}.ctx", self.session_key.as_str()))
+        self.workspace
+            .join(".ctx")
+            .join(format!("{}.ctx", self.session_key.as_str()))
     }
 
     /// Check if this issue has been worked on before.
@@ -147,15 +143,16 @@ impl PrNode {
             self.pr, self.repo
         );
 
-        runtime.sessions().create_with_ctx(
-            &self.session_key,
-            Some(&system_prompt),
-            &self.workspace,
-        )
+        runtime
+            .sessions()
+            .create_with_ctx(&self.session_key, Some(&system_prompt), &self.workspace)
     }
 
     pub fn has_history(&self) -> bool {
-        self.workspace.join(".ctx").join(format!("{}.ctx", self.session_key.as_str())).exists()
+        self.workspace
+            .join(".ctx")
+            .join(format!("{}.ctx", self.session_key.as_str()))
+            .exists()
     }
 }
 
@@ -166,7 +163,10 @@ mod tests {
     #[test]
     fn issue_node_stable_key() {
         let node = IssueNode::new("agentiagency/agentimolt-v03", 183, "/tmp/test");
-        assert_eq!(node.session_key.as_str(), "kg-issue-agentiagency-agentimolt-v03-183");
+        assert_eq!(
+            node.session_key.as_str(),
+            "kg-issue-agentiagency-agentimolt-v03-183"
+        );
 
         // Same issue always gets same key
         let node2 = IssueNode::new("agentiagency/agentimolt-v03", 183, "/tmp/test");
@@ -180,7 +180,10 @@ mod tests {
     #[test]
     fn pr_node_stable_key() {
         let node = PrNode::new("agentiagency/agentimolt-v03", 189, "/tmp/test");
-        assert_eq!(node.session_key.as_str(), "kg-pr-agentiagency-agentimolt-v03-189");
+        assert_eq!(
+            node.session_key.as_str(),
+            "kg-pr-agentiagency-agentimolt-v03-189"
+        );
     }
 
     #[test]
