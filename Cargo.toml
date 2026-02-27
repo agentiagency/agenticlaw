@@ -80,7 +80,7 @@ codegen-units = 1
 
 [package]
 name = "agenticlaw"
-version = "0.3.1"
+version = "0.3.4"
 edition = "2021"
 
 [dependencies]
