@@ -13,7 +13,7 @@ use agenticlaw_core::{AuthConfig, AuthMode, BindMode, GatewayConfig};
 use agenticlaw_gateway::{start_gateway, ExtendedConfig};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 #[derive(Parser)]
 #[command(
@@ -56,6 +56,10 @@ struct Cli {
     /// Disable authentication
     #[arg(long, default_value_t = false)]
     no_auth: bool,
+
+    /// Write logs to a file (in addition to stderr)
+    #[arg(long)]
+    log_file: Option<String>,
 
     /// Birth a new consciousness (first run). Default: wake from ego.
     #[arg(long, default_value_t = false)]

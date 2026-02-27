@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 
 [workspace.dependencies]
@@ -35,7 +35,8 @@ anyhow = "1.0"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Utilities
 uuid = { version = "1.6", features = ["v4"] }
@@ -89,6 +90,7 @@ clap = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 agenticlaw-core = { path = "crates/agenticlaw-core" }

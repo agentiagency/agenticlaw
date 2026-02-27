@@ -108,18 +108,17 @@ impl SessionRegistry {
                     });
                 }
 
-                // We need to set messages synchronously during construction.
-                // Since Session uses RwLock, we'll use blocking_write via a helper.
+                // Set messages synchronously during construction.
+                // block_in_place allows blocking inside async runtime without panic.
                 let session = Arc::new(session);
                 let s = session.clone();
                 let count = msg_vec.len();
-                // Use tokio's Handle to run async in sync context
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.block_on(async {
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
                         let mut lock = s.messages_mut().await;
                         *lock = msg_vec;
                     });
-                }
+                });
 
                 info!(
                     "Resumed session {} from {} ({} messages)",
