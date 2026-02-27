@@ -69,6 +69,11 @@ pub struct App {
     pub session_id: String,
     pub ctx_path: String,
 
+    // Log panel
+    pub show_logs: bool,
+    pub log_lines: Vec<String>,
+    pub log_scroll: usize,
+
     // Control
     pub should_quit: bool,
 }
@@ -88,7 +93,23 @@ impl App {
             context_max: 128_000,
             session_id: session_id.to_string(),
             ctx_path: ctx_path.to_string(),
+            show_logs: false,
+            log_lines: Vec::new(),
+            log_scroll: 0,
             should_quit: false,
+        }
+    }
+
+    pub fn push_log(&mut self, line: &str) {
+        self.log_lines.push(line.to_string());
+        // Cap at 1000 lines
+        if self.log_lines.len() > 1000 {
+            self.log_lines.drain(0..100);
+        }
+        // Auto-scroll
+        let visible = 10usize;
+        if self.log_lines.len() > visible {
+            self.log_scroll = self.log_lines.len() - visible;
         }
     }
 
@@ -162,6 +183,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Option<String> {
     // Ctrl-C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
+        return None;
+    }
+
+    // Ctrl-L toggles log panel
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('l') {
+        app.show_logs = !app.show_logs;
         return None;
     }
 
@@ -394,19 +421,68 @@ fn handle_insert_key(app: &mut App, key: KeyEvent) -> Option<String> {
 fn draw(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    // Layout: output (3/4) | editor (1/4) | status (1 line)
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),         // output
-            Constraint::Percentage(25), // editor
-            Constraint::Length(1),      // status bar
-        ])
-        .split(size);
+    if app.show_logs {
+        // Layout: output | log panel | editor | status
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),         // output
+                Constraint::Percentage(20), // log panel
+                Constraint::Percentage(20), // editor
+                Constraint::Length(1),      // status bar
+            ])
+            .split(size);
 
-    draw_output(frame, app, chunks[0]);
-    draw_editor(frame, app, chunks[1]);
-    draw_status(frame, app, chunks[2]);
+        draw_output(frame, app, chunks[0]);
+        draw_log_panel(frame, app, chunks[1]);
+        draw_editor(frame, app, chunks[2]);
+        draw_status(frame, app, chunks[3]);
+    } else {
+        // Layout: output (3/4) | editor (1/4) | status (1 line)
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),         // output
+                Constraint::Percentage(25), // editor
+                Constraint::Length(1),      // status bar
+            ])
+            .split(size);
+
+        draw_output(frame, app, chunks[0]);
+        draw_editor(frame, app, chunks[1]);
+        draw_status(frame, app, chunks[2]);
+    }
+}
+
+fn draw_log_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let lines: Vec<Line> = app
+        .log_lines
+        .iter()
+        .skip(app.log_scroll)
+        .take(visible_height)
+        .map(|l| {
+            Line::from(Span::styled(
+                l.as_str(),
+                Style::default().fg(Color::DarkGray),
+            ))
+        })
+        .collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Logs (Ctrl+L to hide) ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
@@ -594,12 +670,29 @@ pub async fn run_tui(
     // Only creates a new session if no existing .ctx is found.
     let (session_key, ctx_path) = if let Some(ref name) = session_name {
         // Named session: stable path <name>.ctx — always the same file.
+        // Also checks for legacy timestamped files (YYYYMMDD-HHMMSS-<name>.ctx).
         let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
         let key = SessionKey::new(name);
         if ctx_path.exists() {
             let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx_path)?;
             runtime.sessions().resume_from_ctx(&resumed);
             tracing::info!("Resumed session '{}' from {}", name, ctx_path.display());
+        } else if let Some(legacy) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
+            // Found a legacy timestamped file — resume from it and rename to stable path
+            tracing::info!(
+                "Migrating legacy session '{}': {} → {}",
+                name,
+                legacy.display(),
+                ctx_path.display()
+            );
+            if let Err(e) = std::fs::rename(&legacy, &ctx_path) {
+                tracing::warn!("Failed to rename legacy .ctx: {}, resuming in place", e);
+                let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&legacy)?;
+                runtime.sessions().resume_from_ctx(&resumed);
+            } else {
+                let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx_path)?;
+                runtime.sessions().resume_from_ctx(&resumed);
+            }
         } else {
             tracing::info!("Creating new session '{}'", name);
         }
