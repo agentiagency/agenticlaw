@@ -208,7 +208,12 @@ pub fn find_by_id(workspace: &Path, session_id: &str) -> Option<PathBuf> {
         })
         .collect();
 
-    matches.sort();
+    // Sort by modification time — most recent last
+    matches.sort_by_key(|p| {
+        p.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
     matches.last().cloned()
 }
 

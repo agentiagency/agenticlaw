@@ -11,7 +11,7 @@ use futures::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug)]
 pub enum AgentEvent {
@@ -163,6 +163,8 @@ impl AgentRuntime {
                 .await
                 .unwrap_or_else(|| self.config.default_model.clone());
 
+            let msg_count = messages.len();
+            info!(iteration = iterations, model = %model, messages = msg_count, "Sending API request");
             let request = LlmRequest {
                 model,
                 messages,
@@ -176,6 +178,7 @@ impl AgentRuntime {
                 Ok(s) => s,
                 Err(e) => {
                     let _ = event_tx.send(AgentEvent::Error(e.to_string())).await;
+                    tracing::error!(error = %e, "API request failed");
                     return Err(e.to_string());
                 }
             };
@@ -260,9 +263,17 @@ impl AgentRuntime {
             }
 
             if tool_calls.is_empty() {
+                info!(stop_reason = %stop_reason, text_len = text_content.len(), "Response complete (no tool calls)");
                 let _ = event_tx.send(AgentEvent::Done { stop_reason }).await;
                 break;
             }
+
+            info!(
+                stop_reason = %stop_reason,
+                tool_count = tool_calls.len(),
+                tools = %tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(","),
+                "Response complete (with tool calls)"
+            );
 
             // Execute tools concurrently — results get persisted to .ctx via session.add_tool_result
             // Emit ToolExecuting for all tools before launching
@@ -281,8 +292,25 @@ impl AgentRuntime {
                 .map(|tc| {
                     let tools = self.tools.clone();
                     let name = tc.name.clone();
+                    let id = tc.id.clone();
                     let args = tc.parse_arguments().unwrap_or_default();
-                    async move { tools.execute(&name, args).await }
+                    let args_summary = args.as_object()
+                        .and_then(|o| o.iter().next())
+                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(&v.to_string()).chars().take(80).collect::<String>()))
+                        .unwrap_or_default();
+                    async move {
+                        let start = std::time::Instant::now();
+                        info!(tool = %name, id = %id, args = %args_summary, "Tool executing");
+                        let result = tools.execute(&name, args).await;
+                        let duration = start.elapsed();
+                        let size = result.to_content_string().len();
+                        if result.is_error() {
+                            warn!(tool = %name, id = %id, duration_ms = duration.as_millis() as u64, size, "Tool failed");
+                        } else {
+                            info!(tool = %name, id = %id, duration_ms = duration.as_millis() as u64, size, "Tool completed");
+                        }
+                        result
+                    }
                 })
                 .collect();
 
@@ -318,11 +346,13 @@ impl AgentRuntime {
             );
         }
 
+        let msg_count_final = session.message_count().await;
+        let token_count_final = session.token_count().await;
         info!(
-            "Turn complete: session={}, messages={}, tokens≈{}",
-            session_key,
-            session.message_count().await,
-            session.token_count().await
+            session = %session_key,
+            messages = msg_count_final,
+            tokens = token_count_final,
+            "Turn complete"
         );
         Ok(())
     }
