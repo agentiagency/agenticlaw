@@ -539,10 +539,18 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", app.session_id),
         Style::default().fg(Color::Gray).bg(Color::Black),
     );
+    let version_span = Span::styled(
+        format!(" v{} ", env!("CARGO_PKG_VERSION")),
+        Style::default().fg(Color::DarkGray),
+    );
 
     // Context bar
     let bar_width = area.width.saturating_sub(
-        mode_span.width() as u16 + model_span.width() as u16 + session_span.width() as u16 + 12,
+        mode_span.width() as u16
+            + model_span.width() as u16
+            + session_span.width() as u16
+            + version_span.width() as u16
+            + 12,
     ) as usize;
     let filled = (bar_width as f64 * ctx_pct as f64 / 100.0) as usize;
     let empty = bar_width.saturating_sub(filled);
@@ -552,7 +560,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(ctx_color),
     );
 
-    let status_line = Line::from(vec![mode_span, model_span, session_span, ctx_span]);
+    let status_line = Line::from(vec![
+        mode_span,
+        model_span,
+        session_span,
+        ctx_span,
+        version_span,
+    ]);
     let paragraph = Paragraph::new(status_line);
     frame.render_widget(paragraph, area);
 }
