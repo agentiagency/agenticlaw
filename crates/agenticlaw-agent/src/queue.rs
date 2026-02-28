@@ -544,7 +544,7 @@ impl ConsciousnessLoop {
         let sk = session_key.clone();
 
         tokio::spawn(async move {
-            let stream = match provider.complete_stream(request).await {
+            let stream = match provider.complete_stream(request, None).await {
                 Ok(s) => s,
                 Err(e) => {
                     let _ = output_tx.send(OutputEvent::Error {

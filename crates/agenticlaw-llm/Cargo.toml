@@ -21,3 +21,4 @@ tokio-stream = "0.1"
 eventsource-stream = "0.2"
 pin-project-lite = "0.2"
 async-trait = { workspace = true }
+tokio-util = { workspace = true }

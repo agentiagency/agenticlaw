@@ -63,7 +63,7 @@ pub async fn distill_ego(
         ..Default::default()
     };
 
-    let stream = match provider.complete_stream(request).await {
+    let stream = match provider.complete_stream(request, None).await {
         Ok(s) => s,
         Err(e) => {
             error!("Ego distillation for {} failed: {}", target_name, e);

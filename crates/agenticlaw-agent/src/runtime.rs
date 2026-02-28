@@ -134,8 +134,9 @@ pub struct AgentRuntime {
     config: AgentConfig,
     /// Shared message queues for HITL injection
     queues: Arc<Mutex<MessageQueues>>,
-    /// Cancellation token for aborting the current run
-    cancel: CancellationToken,
+    /// Cancellation token for aborting the current run.
+    /// Wrapped in a Mutex so we can replace it for each new run.
+    cancel: Arc<Mutex<CancellationToken>>,
 }
 
 impl AgentRuntime {
@@ -146,7 +147,7 @@ impl AgentRuntime {
             sessions: Arc::new(SessionRegistry::new()),
             config,
             queues: Arc::new(Mutex::new(MessageQueues::default())),
-            cancel: CancellationToken::new(),
+            cancel: Arc::new(Mutex::new(CancellationToken::new())),
         }
     }
 
@@ -161,7 +162,7 @@ impl AgentRuntime {
             sessions: Arc::new(SessionRegistry::new()),
             config,
             queues: Arc::new(Mutex::new(MessageQueues::default())),
-            cancel: CancellationToken::new(),
+            cancel: Arc::new(Mutex::new(CancellationToken::new())),
         }
     }
 
@@ -195,9 +196,20 @@ impl AgentRuntime {
         self.queues.lock().await.follow_up.push(message);
     }
 
-    /// Abort the current agent run. In-flight LLM calls are cancelled.
-    pub fn abort(&self) {
-        self.cancel.cancel();
+    /// Abort the current agent run. In-flight LLM calls are cancelled
+    /// and the underlying HTTP stream is dropped immediately.
+    pub async fn abort(&self) {
+        self.cancel.lock().await.cancel();
+    }
+
+    /// Get a clone of the current cancellation token for passing to providers.
+    async fn cancel_token(&self) -> CancellationToken {
+        self.cancel.lock().await.clone()
+    }
+
+    /// Reset the cancellation token for a new run.
+    async fn reset_cancel(&self) {
+        *self.cancel.lock().await = CancellationToken::new();
     }
 
     fn get_session(&self, session_key: &SessionKey) -> Arc<Session> {
@@ -234,6 +246,9 @@ impl AgentRuntime {
         user_message: &str,
         event_tx: mpsc::Sender<AgentEvent>,
     ) -> Result<(), String> {
+        // Reset cancellation token for this run
+        self.reset_cancel().await;
+
         let session = self.get_session(session_key);
         let max_context = 200_000; // TODO: get from provider/model
 
@@ -300,7 +315,7 @@ impl AgentRuntime {
                     };
 
                 // Check for abort
-                if self.cancel.is_cancelled() {
+                if self.cancel_token().await.is_cancelled() {
                     let _ = event_tx.send(AgentEvent::Aborted).await;
                     return Ok(());
                 }
@@ -442,9 +457,10 @@ impl AgentRuntime {
             ..Default::default()
         };
 
+        let cancel = self.cancel_token().await;
         let stream = self
             .provider
-            .complete_stream(request)
+            .complete_stream(request, Some(cancel))
             .await
             .map_err(|e| e.to_string())?;
 
@@ -457,7 +473,7 @@ impl AgentRuntime {
 
         while let Some(delta_result) = stream.next().await {
             // Check abort between chunks
-            if self.cancel.is_cancelled() {
+            if self.cancel_token().await.is_cancelled() {
                 return Ok((text_content, tool_calls, "aborted".into()));
             }
 
@@ -684,7 +700,7 @@ impl SpawnableRuntime for AgentRuntime {
                     ..Default::default()
                 };
 
-                let stream = match provider.complete_stream(request).await {
+                let stream = match provider.complete_stream(request, None).await {
                     Ok(s) => s,
                     Err(e) => {
                         let _ = tx.send(AgentEvent::Error(e.to_string())).await;
