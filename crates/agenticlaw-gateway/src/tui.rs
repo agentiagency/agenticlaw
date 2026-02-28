@@ -721,6 +721,7 @@ pub async fn run_tui(
             }
             let tail = lines[start..].join("\n");
             app.push_output(&tail);
+            app.push_output("\n\n\n\n\n");
         }
     }
 
