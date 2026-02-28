@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "agenticlaw-gw"
+name = "agenticlaw"
 path = "src/main.rs"
 
 [dependencies]
@@ -36,3 +36,7 @@ chrono = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+http = { workspace = true }
+url = { workspace = true }
+reqwest = { workspace = true }

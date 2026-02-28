@@ -37,8 +37,7 @@ impl Default for ExtendedConfig {
 }
 
 pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
-    let env_token = std::env::var("AGENTICLAW_GATEWAY_TOKEN")
-        .or_else(|_| std::env::var("RUSTCLAW_GATEWAY_TOKEN"))
+    let env_token = std::env::var("RUSTCLAW_GATEWAY_TOKEN")
         .or_else(|_| std::env::var("OPENCLAW_GATEWAY_TOKEN"))
         .ok();
     let auth = ResolvedAuth::from_config(&config.gateway.auth, env_token);
@@ -48,8 +47,7 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
         .ok_or_else(|| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
 
-    let layer = std::env::var("AGENTICLAW_LAYER")
-        .or_else(|_| std::env::var("RUSTCLAW_LAYER"))
+    let layer = std::env::var("RUSTCLAW_LAYER")
         .or_else(|_| std::env::var("OPENCLAW_LAYER"))
         .ok();
 
@@ -57,16 +55,13 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
     info!("Registered tools: {:?}", tools.list());
 
     let agent_config = AgentConfig {
-        default_model: std::env::var("AGENTICLAW_MODEL")
-            .or_else(|_| std::env::var("RUSTCLAW_MODEL"))
+        default_model: std::env::var("RUSTCLAW_MODEL")
             .or_else(|_| std::env::var("OPENCLAW_MODEL"))
             .unwrap_or_else(|_| "claude-opus-4-6-20250929".to_string()),
         max_tool_iterations: 25,
-        system_prompt: config.system_prompt.or_else(|| {
-            std::env::var("AGENTICLAW_SYSTEM_PROMPT")
-                .or_else(|_| std::env::var("RUSTCLAW_SYSTEM_PROMPT"))
-                .ok()
-        }),
+        system_prompt: config
+            .system_prompt
+            .or_else(|| std::env::var("RUSTCLAW_SYSTEM_PROMPT").ok()),
         workspace_root: config.workspace_root.clone(),
         sleep_threshold_pct: 1.0,
     };
@@ -94,8 +89,6 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         layer: layer.clone(),
         port: config.gateway.port,
         output_tx,
-        consciousness_enabled: false,
-        started_at: std::time::Instant::now(),
     });
 
     let app = Router::new()
@@ -115,7 +108,7 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
             .parse()
             .expect("invalid bind address");
 
-    info!("Agenticlaw Gateway v{} starting", env!("CARGO_PKG_VERSION"));
+    info!("Rustclaw Gateway v{} starting", env!("CARGO_PKG_VERSION"));
     info!("  Listening on: {}", bind_addr);
     info!("  WebSocket: ws://{}/ws", bind_addr);
     info!("  Context:   http://{}/ctx/{{session}}", bind_addr);
@@ -135,92 +128,14 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<WsState>>) -> 
 }
 
 async fn health_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    Json(serde_json::json!({
+    serde_json::json!({
         "status": "healthy",
         "version": env!("CARGO_PKG_VERSION"),
         "layer": state.layer,
         "sessions": state.agent.sessions().list().len(),
         "tools": state.agent.tool_definitions().len(),
-        "consciousness": state.consciousness_enabled,
-        "uptime_secs": state.started_at.elapsed().as_secs(),
-    }))
-}
-
-/// GET /surface — consciousness surface state (bee protocol: sacred endpoint)
-async fn surface_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let sessions: Vec<String> = state
-        .agent
-        .sessions()
-        .list()
-        .into_iter()
-        .map(|k| k.as_str().to_string())
-        .collect();
-    Json(serde_json::json!({
-        "bee": "agenticlaw",
-        "version": env!("CARGO_PKG_VERSION"),
-        "layer": state.layer,
-        "consciousness": state.consciousness_enabled,
-        "sessions": sessions,
-        "tools": state.agent.tool_definitions().len(),
-        "uptime_secs": state.started_at.elapsed().as_secs(),
-        "port": state.port,
-        "workspace": state.agent.workspace().display().to_string(),
-    }))
-}
-
-/// POST /plan — accept a plan from the swarm (bee protocol: sacred endpoint)
-async fn plan_handler(
-    State(_state): State<Arc<WsState>>,
-    Json(body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    info!("Plan received: {:?}", body);
-    Json(serde_json::json!({
-        "status": "accepted",
-        "message": "Plan received by agenticlaw",
-    }))
-}
-
-/// POST /test — run self-test (bee protocol: sacred endpoint)
-async fn test_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let healthy = true; // TODO: real health checks later
-    Json(serde_json::json!({
-        "status": if healthy { "pass" } else { "fail" },
-        "version": env!("CARGO_PKG_VERSION"),
-        "tools": state.agent.tool_definitions().len(),
-        "consciousness": state.consciousness_enabled,
-    }))
-}
-
-/// GET /hints — capability hints for the swarm (bee protocol: sacred endpoint)
-async fn hints_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
-    let tool_names: Vec<String> = state
-        .agent
-        .tool_definitions()
-        .into_iter()
-        .map(|t| t.name)
-        .collect();
-    Json(serde_json::json!({
-        "bee": "agenticlaw",
-        "capabilities": [
-            "agent.chat",
-            "agent.gateway",
-            "agent.consciousness",
-            "agent.tools",
-            "ctx.serve",
-            "ctx.watch",
-        ],
-        "tools": tool_names,
-        "endpoints": {
-            "websocket": "/ws",
-            "health": "/health",
-            "surface": "/surface",
-            "plan": "/plan",
-            "test": "/test",
-            "hints": "/hints",
-            "ctx": "/ctx/{session}",
-        },
-        "port": state.port,
-    }))
+    })
+    .to_string()
 }
 
 /// Serve the raw .ctx file for a session — the entire conversation visible at all times.
@@ -253,6 +168,147 @@ async fn ctx_handler(
     }
 }
 
+/// Sacred endpoint: /surface — bee manifest
+async fn surface_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
+    let tools: Vec<String> = state
+        .agent
+        .tool_definitions()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    Json(serde_json::json!({
+        "name": "agenticlaw",
+        "version": env!("CARGO_PKG_VERSION"),
+        "type": "runtime",
+        "provides": [
+            "runtime.agenticlaw",
+            "runtime.gateway",
+            "runtime.consciousness",
+            "agent.chat",
+            "agent.tools",
+            "agent.sessions",
+            "agent.spawn",
+            "ws.json-rpc-v3",
+            "ws.legacy-v2",
+            "ctx.persistence",
+            "consciousness.dual-core",
+            "consciousness.ego-distill",
+            "consciousness.injection",
+            "consciousness.sleep-wake"
+        ],
+        "requires": ["runtime.rust"],
+        "tools": tools,
+        "sacred": {
+            "health": "/health",
+            "surface": "/surface",
+            "plan": "/plan",
+            "test": "/test",
+            "hints": "/hints"
+        }
+    }))
+}
+
+/// Sacred endpoint: /plan — compatibility check
+async fn plan_handler(
+    State(_state): State<Arc<WsState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let provides: Vec<&str> = vec![
+        "runtime.agenticlaw",
+        "runtime.gateway",
+        "runtime.consciousness",
+        "agent.chat",
+        "agent.tools",
+        "agent.sessions",
+        "agent.spawn",
+        "ws.json-rpc-v3",
+        "ws.legacy-v2",
+        "ctx.persistence",
+        "consciousness.dual-core",
+        "consciousness.ego-distill",
+        "consciousness.injection",
+        "consciousness.sleep-wake",
+    ];
+
+    let requested = body["requires"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    let missing: Vec<&str> = requested
+        .iter()
+        .filter(|r| !provides.contains(r))
+        .copied()
+        .collect();
+
+    let compatible = missing.is_empty();
+
+    Json(serde_json::json!({
+        "compatible": compatible,
+        "missing": missing,
+        "provides": provides,
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+/// Sacred endpoint: /test — self-test
+async fn test_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
+    let mut results = Vec::new();
+
+    // Test 1: Tool registry loaded
+    let tool_count = state.agent.tool_definitions().len();
+    results.push(serde_json::json!({
+        "test": "tool_registry",
+        "pass": tool_count > 0,
+        "detail": format!("{} tools loaded", tool_count)
+    }));
+
+    // Test 2: Sessions accessible
+    let session_count = state.agent.sessions().list().len();
+    results.push(serde_json::json!({
+        "test": "sessions",
+        "pass": true,
+        "detail": format!("{} active sessions", session_count)
+    }));
+
+    // Test 3: API key present (don't test connectivity — that's expensive)
+    let has_key = std::env::var("ANTHROPIC_API_KEY").is_ok();
+    results.push(serde_json::json!({
+        "test": "api_key",
+        "pass": has_key,
+        "detail": if has_key { "ANTHROPIC_API_KEY set" } else { "ANTHROPIC_API_KEY missing" }
+    }));
+
+    let all_pass = results.iter().all(|r| r["pass"].as_bool() == Some(true));
+
+    Json(serde_json::json!({
+        "pass": all_pass,
+        "results": results,
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+/// Sacred endpoint: /hints — integration guidance
+async fn hints_handler(State(_state): State<Arc<WsState>>) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "usage": {
+            "chat": "Connect via WebSocket to /ws, authenticate with {\"token\": \"...\"}, then send {\"id\": \"1\", \"method\": \"chat.send\", \"params\": {\"session\": \"name\", \"message\": \"hello\"}}",
+            "health": "GET /health for status",
+            "ctx": "GET /ctx/{session} for raw conversation context",
+        },
+        "related_bees": [
+            { "name": "protectgateway", "role": "Transparent security proxy, sits in front of agenticlaw" },
+            { "name": "operator", "role": "Container builder with policy-scoped tool access" },
+            { "name": "beectl", "role": "Service lifecycle management" }
+        ],
+        "notes": [
+            "Agenticlaw uses .ctx files, not JSONL, for session persistence",
+            "Consciousness stack is enabled by default; use --no-consciousness for lightweight mode",
+            "When protectgateway is installed, agenticlaw moves to port 18790"
+        ]
+    }))
+}
+
 async fn index_handler(State(state): State<Arc<WsState>>) -> Html<String> {
     let tools: Vec<String> = state
         .agent
@@ -278,7 +334,7 @@ async fn index_handler(State(state): State<Arc<WsState>>) -> Html<String> {
     };
 
     Html(format!(
-        r#"<!DOCTYPE html><html><head><title>Agenticlaw Gateway</title>
+        r#"<!DOCTYPE html><html><head><title>Rustclaw Gateway</title>
 <style>
 body {{ font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; max-width: 900px; margin: 0 auto; }}
 h1 {{ color: #f39c12; }} h2 {{ color: #3498db; }}
@@ -290,7 +346,7 @@ button {{ background: #f39c12; border: none; padding: 8px 16px; border-radius: 4
 button:hover {{ background: #e67e22; }}
 .tool {{ color: #3498db; }} .error {{ color: #e74c3c; }}
 </style></head><body>
-<h1>Agenticlaw Gateway v{version}</h1>
+<h1>Rustclaw Gateway v{version}</h1>
 <div class="info">
 <p>WebSocket: <code>ws://localhost:{port}/ws</code></p>
 <p>Protocol: v3 JSON-RPC (with v2 legacy fallback)</p>

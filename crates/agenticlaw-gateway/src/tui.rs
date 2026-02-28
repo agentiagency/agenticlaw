@@ -69,11 +69,6 @@ pub struct App {
     pub session_id: String,
     pub ctx_path: String,
 
-    // Log panel
-    pub show_logs: bool,
-    pub log_lines: Vec<String>,
-    pub log_scroll: usize,
-
     // Control
     pub should_quit: bool,
 }
@@ -93,23 +88,7 @@ impl App {
             context_max: 128_000,
             session_id: session_id.to_string(),
             ctx_path: ctx_path.to_string(),
-            show_logs: false,
-            log_lines: Vec::new(),
-            log_scroll: 0,
             should_quit: false,
-        }
-    }
-
-    pub fn push_log(&mut self, line: &str) {
-        self.log_lines.push(line.to_string());
-        // Cap at 1000 lines
-        if self.log_lines.len() > 1000 {
-            self.log_lines.drain(0..100);
-        }
-        // Auto-scroll
-        let visible = 10usize;
-        if self.log_lines.len() > visible {
-            self.log_scroll = self.log_lines.len() - visible;
         }
     }
 
@@ -123,7 +102,7 @@ impl App {
         self.cursor_col = 0;
     }
 
-    fn push_output(&mut self, text: &str) {
+    pub fn push_output(&mut self, text: &str) {
         // Append text, handling newlines
         for ch in text.chars() {
             if ch == '\n' {
@@ -179,16 +158,10 @@ fn char_to_byte(s: &str, char_idx: usize) -> usize {
 // ---------------------------------------------------------------------------
 
 /// Returns Some(message) if the user wants to send a message.
-fn handle_key(app: &mut App, key: KeyEvent) -> Option<String> {
+pub fn handle_key(app: &mut App, key: KeyEvent) -> Option<String> {
     // Ctrl-C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
-        return None;
-    }
-
-    // Ctrl-L toggles log panel
-    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('l') {
-        app.show_logs = !app.show_logs;
         return None;
     }
 
@@ -418,80 +391,32 @@ fn handle_insert_key(app: &mut App, key: KeyEvent) -> Option<String> {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    if app.show_logs {
-        // Layout: output | log panel | editor | status
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(1),         // output
-                Constraint::Percentage(20), // log panel
-                Constraint::Percentage(20), // editor
-                Constraint::Length(1),      // status bar
-            ])
-            .split(size);
+    // Layout: output (3/4) | editor (1/4) | status (1 line)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),         // output
+            Constraint::Percentage(25), // editor
+            Constraint::Length(1),      // status bar
+        ])
+        .split(size);
 
-        draw_output(frame, app, chunks[0]);
-        draw_log_panel(frame, app, chunks[1]);
-        draw_editor(frame, app, chunks[2]);
-        draw_status(frame, app, chunks[3]);
-    } else {
-        // Layout: output (3/4) | editor (1/4) | status (1 line)
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(1),         // output
-                Constraint::Percentage(25), // editor
-                Constraint::Length(1),      // status bar
-            ])
-            .split(size);
-
-        draw_output(frame, app, chunks[0]);
-        draw_editor(frame, app, chunks[1]);
-        draw_status(frame, app, chunks[2]);
-    }
-}
-
-fn draw_log_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize;
-    let lines: Vec<Line> = app
-        .log_lines
-        .iter()
-        .skip(app.log_scroll)
-        .take(visible_height)
-        .map(|l| {
-            Line::from(Span::styled(
-                l.as_str(),
-                Style::default().fg(Color::DarkGray),
-            ))
-        })
-        .collect();
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(Span::styled(
-            " Logs (Ctrl+L to hide) ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
+    draw_output(frame, app, chunks[0]);
+    draw_editor(frame, app, chunks[1]);
+    draw_status(frame, app, chunks[2]);
 }
 
 fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize; // subtract borders
-    let inner_width = area.width.saturating_sub(2) as usize; // subtract borders
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total = app.output_lines.len();
 
-    // Convert all output lines to styled Lines
-    let all_lines: Vec<Line> = app
-        .output_lines
+    let end = app.output_scroll.min(total);
+    let start = end.saturating_sub(visible_height);
+
+    let lines: Vec<Line> = app.output_lines[start..end]
         .iter()
         .map(|l| {
             if l.starts_with("> ") {
@@ -505,10 +430,6 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             }
         })
         .collect();
-
-    // When auto-scrolled (output_scroll == total), use scroll offset to pin to bottom.
-    // Calculate total visual lines accounting for wrapping.
-    let at_bottom = app.output_scroll >= app.output_lines.len();
 
     let title = if app.agent_running {
         " Output [running...] "
@@ -524,40 +445,11 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             Color::DarkGray
         }));
 
-    if at_bottom && inner_width > 0 {
-        // Count total visual lines after wrapping
-        let total_visual: usize = all_lines
-            .iter()
-            .map(|l| {
-                let w = l.width();
-                if w == 0 {
-                    1
-                } else {
-                    w.div_ceil(inner_width)
-                }
-            })
-            .sum();
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
 
-        let scroll_offset = total_visual.saturating_sub(visible_height) as u16;
-
-        let paragraph = Paragraph::new(all_lines)
-            .block(block)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll_offset, 0));
-
-        frame.render_widget(paragraph, area);
-    } else {
-        // Manual scroll position: show from output_scroll backward
-        let end = app.output_scroll.min(app.output_lines.len());
-        let start = end.saturating_sub(visible_height);
-        let visible: Vec<Line> = all_lines[start..end].to_vec();
-
-        let paragraph = Paragraph::new(visible)
-            .block(block)
-            .wrap(Wrap { trim: false });
-
-        frame.render_widget(paragraph, area);
-    }
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
@@ -657,36 +549,15 @@ pub async fn run_tui(
     let tools = create_default_registry(&workspace_root);
     let config = AgentConfig {
         default_model: default_model.clone(),
-        max_tool_iterations: usize::MAX,
+        max_tool_iterations: 25,
         system_prompt: None,
         workspace_root: workspace_root.clone(),
         sleep_threshold_pct: 1.0,
     };
     let runtime = Arc::new(AgentRuntime::new(&api_key, tools, config));
 
-    // Resume or create session.
-    // --session <name> ALWAYS resumes if a .ctx file exists (no separate --resume needed).
-    // --resume without --session resumes the latest session.
-    // Only creates a new session if no existing .ctx is found.
-    let (session_key, ctx_path) = if let Some(ref name) = session_name {
-        // Named session: always resume the LATEST .ctx for this name.
-        // .ctx files are timestamped (YYYYMMDD-HHMMSS-<name>.ctx) so sessions
-        // can roll over on sleep. find_by_id returns the most recent one.
-        let key = SessionKey::new(name);
-        if let Some(latest) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
-            // Resume from the latest .ctx for this session
-            let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&latest)?;
-            runtime.sessions().resume_from_ctx(&resumed, Some(name));
-            tracing::info!("Resumed session '{}' from {}", name, latest.display());
-            (key, latest)
-        } else {
-            // First ever run — create new timestamped .ctx
-            let ctx_path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, name);
-            tracing::info!("Creating new session '{}'", name);
-            (key, ctx_path)
-        }
-    } else if resume {
-        // --resume without --session: resume latest
+    // Resume or create new session
+    let (session_key, ctx_path) = if resume {
         let ctx = agenticlaw_agent::ctx_file::find_latest(&workspace_root).ok_or_else(|| {
             anyhow::anyhow!(
                 "No .ctx files found to resume in {}",
@@ -696,11 +567,11 @@ pub async fn run_tui(
         let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx)?;
         let key = SessionKey::new(&resumed.session_id);
         let path = resumed.ctx_path.clone();
-        runtime.sessions().resume_from_ctx(&resumed, None);
+        runtime.sessions().resume_from_ctx(&resumed);
         (key, path)
     } else {
-        // No session name, no resume: fresh anonymous session
-        let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+        let session_id =
+            session_name.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
         let key = SessionKey::new(&session_id);
         let path = agenticlaw_agent::ctx_file::session_ctx_path(&workspace_root, &session_id);
         (key, path)
@@ -708,22 +579,6 @@ pub async fn run_tui(
 
     let session_id = session_key.as_str().to_string();
     let mut app = App::new(&default_model, &session_id, &ctx_path.to_string_lossy());
-
-    // Load tail of existing .ctx content into TUI output for visual context.
-    // Full history is already in the session messages for the LLM.
-    if ctx_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&ctx_path) {
-            // Show last ~200 lines to avoid scroll issues with massive files
-            let lines: Vec<&str> = content.lines().collect();
-            let start = lines.len().saturating_sub(200);
-            if start > 0 {
-                app.push_output(&format!("... ({} earlier lines) ...\n\n", start));
-            }
-            let tail = lines[start..].join("\n");
-            app.push_output(&tail);
-            app.push_output("\n\n\n\n\n");
-        }
-    }
 
     // Setup terminal with panic hook to restore on crash
     let original_hook = std::panic::take_hook();
@@ -759,7 +614,7 @@ pub async fn run_tui(
     terminal::disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
 
-    eprintln!("Agenticlaw complete, goodbye!");
+    eprintln!("Rustclaw complete, goodbye!");
 
     result
 }
@@ -792,27 +647,6 @@ async fn run_event_loop(
                 }
 
                 if let Some(message) = handle_key(app, key) {
-                    if app.agent_running {
-                        // HITL steering: inject into the agent's steering queue.
-                        // This will skip remaining tools and inject the message
-                        // before the next LLM call — highest priority.
-                        let rt2 = runtime.clone();
-                        let sk2 = session_key.clone();
-                        let msg2 = message.clone();
-                        tokio::spawn(async move {
-                            // Add to session for context persistence
-                            if let Some(sess) = rt2.sessions().get(&sk2) {
-                                sess.add_user_message(&msg2, 1.0, 200_000).await;
-                            }
-                            // Add to steering queue for immediate interrupt
-                            rt2.steer(msg2).await;
-                        });
-                        app.push_output(&format!(
-                            "\n> {}\n[steering — interrupting agent]\n\n",
-                            message.trim()
-                        ));
-                        continue;
-                    }
                     // Send message to agent
                     app.agent_running = true;
                     let rt = runtime.clone();
@@ -872,23 +706,6 @@ async fn run_event_loop(
                         app.push_output(&format!("  done ({} chars)\n", result.len()));
                     }
                 }
-                AgentEvent::ToolSkipped { name, .. } => {
-                    app.push_output(&format!("  [skipped: {} — steering interrupt]\n", name));
-                }
-                AgentEvent::SteeringInjected { message_count } => {
-                    app.push_output(&format!(
-                        "[{} steering message{} injected]\n",
-                        message_count,
-                        if message_count > 1 { "s" } else { "" }
-                    ));
-                }
-                AgentEvent::FollowUpInjected { message_count } => {
-                    app.push_output(&format!(
-                        "[{} follow-up message{} injected]\n",
-                        message_count,
-                        if message_count > 1 { "s" } else { "" }
-                    ));
-                }
                 AgentEvent::Done { .. } => {
                     app.push_output("\n");
                     app.agent_running = false;
@@ -896,10 +713,6 @@ async fn run_event_loop(
                     if let Some(sess) = runtime.sessions().get(&session_key) {
                         app.context_used = sess.token_count().await;
                     }
-                }
-                AgentEvent::Aborted => {
-                    app.push_output("\n[aborted]\n");
-                    app.agent_running = false;
                 }
                 AgentEvent::Error(e) => {
                     app.push_output(&format!("\nError: {}\n", e));

@@ -7,11 +7,10 @@ members = [
     "crates/agenticlaw-agent",
     "crates/agenticlaw-gateway",
     "crates/agenticlaw-consciousness",
-    "crates/agenticlaw-kg",
 ]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
@@ -23,6 +22,9 @@ axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+http = "1.0"
+url = "2.5"
 futures = "0.3"
 
 # Serialization
@@ -35,8 +37,7 @@ anyhow = "1.0"
 
 # Logging
 tracing = "0.1"
-tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Utilities
 uuid = { version = "1.6", features = ["v4"] }
@@ -80,7 +81,7 @@ codegen-units = 1
 
 [package]
 name = "agenticlaw"
-version = "0.5.0"
+version = "0.1.0"
 edition = "2021"
 
 [dependencies]
@@ -89,13 +90,6 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true }
-anyhow = { workspace = true }
-agenticlaw-core = { path = "crates/agenticlaw-core" }
-agenticlaw-gateway = { path = "crates/agenticlaw-gateway" }
-agenticlaw-consciousness = { path = "crates/agenticlaw-consciousness" }
 
 [[bin]]
 name = "agenticlaw-fmt"
@@ -104,7 +98,3 @@ path = "src/main.rs"
 [[bin]]
 name = "agenticlaw-supervisor"
 path = "src/bin/supervisor.rs"
-
-[[bin]]
-name = "agenticlaw"
-path = "src/bin/agenticlaw.rs"
