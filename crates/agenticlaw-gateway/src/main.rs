@@ -101,6 +101,7 @@ async fn main() -> anyhow::Result<()> {
                 anthropic_api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
                 workspace_root,
                 system_prompt,
+                consciousness_enabled: false,
             };
             start_gateway(config).await?;
         }

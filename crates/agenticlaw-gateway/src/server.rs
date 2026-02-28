@@ -23,6 +23,8 @@ pub struct ExtendedConfig {
     pub anthropic_api_key: Option<String>,
     pub workspace_root: PathBuf,
     pub system_prompt: Option<String>,
+    /// Whether consciousness cascade is running alongside this gateway.
+    pub consciousness_enabled: bool,
 }
 
 impl Default for ExtendedConfig {
@@ -32,6 +34,7 @@ impl Default for ExtendedConfig {
             anthropic_api_key: None,
             workspace_root: std::env::current_dir().unwrap_or_default(),
             system_prompt: None,
+            consciousness_enabled: false,
         }
     }
 }
@@ -94,7 +97,7 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         layer: layer.clone(),
         port: config.gateway.port,
         output_tx,
-        consciousness_enabled: false,
+        consciousness_enabled: config.consciousness_enabled,
         started_at: std::time::Instant::now(),
     });
 
