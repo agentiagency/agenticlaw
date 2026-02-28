@@ -1,7 +1,7 @@
 //! Terminal UI with vim-style editor, streaming output, and context bar
 
 use agenticlaw_agent::{AgentConfig, AgentEvent, AgentRuntime, SessionKey};
-use agenticlaw_tools::create_default_registry;
+use agenticlaw_tools::{create_default_registry_with_spawn, create_runtime_handle};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
@@ -654,7 +654,8 @@ pub async fn run_tui(
         std::env::var("RUSTCLAW_MODEL").unwrap_or_else(|_| "claude-opus-4-6".to_string())
     });
 
-    let tools = create_default_registry(&workspace_root);
+    let runtime_handle = create_runtime_handle();
+    let tools = create_default_registry_with_spawn(&workspace_root, runtime_handle.clone());
     let config = AgentConfig {
         default_model: default_model.clone(),
         max_tool_iterations: usize::MAX,
@@ -663,6 +664,12 @@ pub async fn run_tui(
         sleep_threshold_pct: 1.0,
     };
     let runtime = Arc::new(AgentRuntime::new(&api_key, tools, config));
+
+    // Wire runtime handle so spawn tool can create child agents
+    {
+        let mut handle = runtime_handle.write().await;
+        *handle = Some(runtime.clone());
+    }
 
     // Resume or create session.
     // --session <name> ALWAYS resumes if a .ctx file exists (no separate --resume needed).
