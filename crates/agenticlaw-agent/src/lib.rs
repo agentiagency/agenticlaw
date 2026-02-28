@@ -5,6 +5,7 @@ pub mod ctx_file;
 pub mod queue;
 pub mod runtime;
 pub mod session;
+pub mod subagent;
 
 pub use context::ContextManager;
 pub use queue::{
@@ -13,3 +14,4 @@ pub use queue::{
 };
 pub use runtime::{AgentConfig, AgentEvent, AgentRuntime};
 pub use session::{Session, SessionKey, SessionRegistry};
+pub use subagent::{SubagentInfo, SubagentRegistry, SubagentStatus};
