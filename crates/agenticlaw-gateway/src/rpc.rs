@@ -3,7 +3,7 @@
 //! Each RPC method (chat.send, chat.history, sessions.list, etc.) is handled
 //! by a dedicated async function. The router maps method names to handlers.
 
-use agenticlaw_agent::{AgentEvent, AgentRuntime, OutputEvent, SessionKey};
+use agenticlaw_agent::{AgentRuntime, OutputEvent, Priority, QueueEvent, SessionKey};
 use agenticlaw_core::{EventMessage, RpcResponse};
 use serde_json::Value;
 use std::sync::Arc;
@@ -15,6 +15,7 @@ pub struct ConnectionContext {
     pub authenticated: bool,
     pub agent: Arc<AgentRuntime>,
     pub output_tx: broadcast::Sender<OutputEvent>,
+    pub queue_tx: mpsc::Sender<QueueEvent>,
 }
 
 /// Result type for RPC handlers.
@@ -79,82 +80,17 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
         &message[..message.len().min(50)]
     );
 
-    // Spawn the agent turn in the background
-    let agent = ctx.agent.clone();
-    let output_tx = ctx.output_tx.clone();
-    let session_clone = session.clone();
-    let sk = session_key.clone();
+    // Submit to the event queue — ConsciousnessLoop handles everything
+    let event = QueueEvent::HumanMessage {
+        session: session_key,
+        content: message,
+        priority: Priority::Human,
+    };
 
-    tokio::spawn(async move {
-        let (event_tx, mut event_rx) = mpsc::channel::<AgentEvent>(256);
-
-        // Forward AgentEvents to OutputEvents on the broadcast channel
-        let fwd_output_tx = output_tx.clone();
-        let fwd_session = session_clone.clone();
-        let forward_task = tokio::spawn(async move {
-            while let Some(event) = event_rx.recv().await {
-                let output = match event {
-                    AgentEvent::Text(text) => OutputEvent::Delta {
-                        session: fwd_session.clone(),
-                        content: text,
-                    },
-                    AgentEvent::Thinking(text) => OutputEvent::Thinking {
-                        session: fwd_session.clone(),
-                        content: text,
-                    },
-                    AgentEvent::ToolCallStart { id, name } => OutputEvent::ToolCall {
-                        session: fwd_session.clone(),
-                        id,
-                        name,
-                    },
-                    AgentEvent::ToolCallDelta { id, arguments } => OutputEvent::ToolCallDelta {
-                        session: fwd_session.clone(),
-                        id,
-                        arguments,
-                    },
-                    AgentEvent::ToolExecuting { id, name } => OutputEvent::ToolExecuting {
-                        session: fwd_session.clone(),
-                        id,
-                        name,
-                    },
-                    AgentEvent::ToolResult {
-                        id,
-                        name,
-                        result,
-                        is_error,
-                    } => OutputEvent::ToolResult {
-                        session: fwd_session.clone(),
-                        id,
-                        name,
-                        result,
-                        is_error,
-                    },
-                    AgentEvent::Sleep { token_count } => OutputEvent::Sleep {
-                        session: fwd_session.clone(),
-                        token_count,
-                    },
-                    AgentEvent::Done { .. } => OutputEvent::Done {
-                        session: fwd_session.clone(),
-                    },
-                    AgentEvent::Error(e) => OutputEvent::Error {
-                        session: fwd_session.clone(),
-                        message: e,
-                    },
-                };
-                let _ = fwd_output_tx.send(output);
-            }
-        });
-
-        let result = agent.run_turn(&sk, &message, event_tx).await;
-        let _ = forward_task.await;
-
-        if let Err(e) = result {
-            let _ = output_tx.send(OutputEvent::Error {
-                session: session_clone,
-                message: e,
-            });
-        }
-    });
+    ctx.queue_tx
+        .send(event)
+        .await
+        .map_err(|_| (-32000, "Event queue closed".to_string()))?;
 
     // Return immediately — events stream via the broadcast channel
     Ok(serde_json::json!({ "ok": true }))

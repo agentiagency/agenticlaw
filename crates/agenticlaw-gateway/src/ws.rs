@@ -5,12 +5,12 @@
 
 use crate::auth::ResolvedAuth;
 use crate::rpc::{self, output_event_to_message, ConnectionContext};
-use agenticlaw_agent::{AgentRuntime, OutputEvent};
+use agenticlaw_agent::{AgentRuntime, OutputEvent, QueueEvent};
 use agenticlaw_core::{EventMessage, IncomingMessage, RpcResponse};
 use axum::extract::ws::{Message as WsMessage, WebSocket};
 use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 /// Shared state for WebSocket connections.
@@ -21,6 +21,8 @@ pub struct WsState {
     pub port: u16,
     /// Broadcast channel for OutputEvents — all WS clients subscribe.
     pub output_tx: broadcast::Sender<OutputEvent>,
+    /// Event queue sender — submits events to the ConsciousnessLoop.
+    pub queue_tx: mpsc::Sender<QueueEvent>,
     /// Whether consciousness stack is enabled alongside this gateway.
     pub consciousness_enabled: bool,
     /// When the gateway started.
@@ -47,6 +49,7 @@ pub async fn handle_connection(socket: WebSocket, state: Arc<WsState>) {
         authenticated: false,
         agent: state.agent.clone(),
         output_tx: state.output_tx.clone(),
+        queue_tx: state.queue_tx.clone(),
     };
 
     loop {
@@ -151,6 +154,7 @@ async fn handle_text_message(
                 authenticated: *authenticated,
                 agent: ctx.agent.clone(),
                 output_tx: ctx.output_tx.clone(),
+                queue_tx: ctx.queue_tx.clone(),
             };
             let result = rpc::route_rpc(&req.method, req.params, &rpc_ctx).await;
             let resp = rpc::to_response(&req.id, result);
@@ -239,6 +243,7 @@ async fn handle_legacy_message(
                 authenticated: true,
                 agent: state.agent.clone(),
                 output_tx: state.output_tx.clone(),
+                queue_tx: state.queue_tx.clone(),
             };
             let mut params = serde_json::json!({ "session": session, "message": message });
             if let Some(m) = model {
@@ -267,6 +272,7 @@ async fn handle_legacy_message(
                 authenticated: true,
                 agent: state.agent.clone(),
                 output_tx: state.output_tx.clone(),
+                queue_tx: state.queue_tx.clone(),
             };
             let result = rpc::route_rpc(&method, params, &ctx).await;
             let legacy_msg = match result {

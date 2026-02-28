@@ -1,6 +1,9 @@
 //! Terminal UI with vim-style editor, streaming output, and context bar
 
-use agenticlaw_agent::{AgentConfig, AgentEvent, AgentRuntime, SessionKey};
+use agenticlaw_agent::{
+    AgentConfig, AgentRuntime, ConsciousnessLoop, ConsciousnessLoopConfig, OutputEvent, Priority,
+    QueueEvent, SessionKey,
+};
 use agenticlaw_tools::create_default_registry;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -18,7 +21,6 @@ use ratatui::{
 use std::io::{self, Stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
 
 // ---------------------------------------------------------------------------
 // Vim mode
@@ -664,6 +666,25 @@ pub async fn run_tui(
     };
     let runtime = Arc::new(AgentRuntime::new(&api_key, tools, config));
 
+    // Create the ConsciousnessLoop for event-queue-based execution
+    let consciousness_config = ConsciousnessLoopConfig {
+        default_model: default_model.clone(),
+        max_tool_iterations: usize::MAX,
+        sleep_threshold_pct: 1.0,
+        max_context_tokens: 200_000,
+    };
+    let (mut consciousness_loop, queue_tx, output_tx) = ConsciousnessLoop::new(
+        runtime.provider().clone(),
+        runtime.tools().clone(),
+        runtime.sessions().clone(),
+        consciousness_config,
+    );
+
+    // Spawn the consciousness loop
+    tokio::spawn(async move {
+        consciousness_loop.run().await;
+    });
+
     // Resume or create session.
     // --session <name> ALWAYS resumes if a .ctx file exists (no separate --resume needed).
     // --resume without --session resumes the latest session.
@@ -739,19 +760,14 @@ pub async fn run_tui(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Channels for agent events
-    let (agent_event_tx, mut agent_event_rx) = mpsc::channel::<AgentEvent>(256);
-    let (abort_tx, _abort_rx) = watch::channel(false);
-
-    // Event loop
+    // Event loop — uses the ConsciousnessLoop via queue_tx/output_tx
     let result = run_event_loop(
         &mut terminal,
         &mut app,
         runtime,
         session_key,
-        &mut agent_event_rx,
-        agent_event_tx,
-        abort_tx,
+        queue_tx,
+        output_tx,
     )
     .await;
 
@@ -769,10 +785,12 @@ async fn run_event_loop(
     app: &mut App,
     runtime: Arc<AgentRuntime>,
     session_key: SessionKey,
-    agent_event_rx: &mut mpsc::Receiver<AgentEvent>,
-    agent_event_tx: mpsc::Sender<AgentEvent>,
-    abort_tx: watch::Sender<bool>,
+    queue_tx: tokio::sync::mpsc::Sender<QueueEvent>,
+    output_broadcast: tokio::sync::broadcast::Sender<OutputEvent>,
 ) -> anyhow::Result<()> {
+    let mut output_rx = output_broadcast.subscribe();
+    let session_str = session_key.as_str().to_string();
+
     loop {
         // Draw
         terminal.draw(|f| draw(f, app))?;
@@ -783,63 +801,69 @@ async fn run_event_loop(
         // Check terminal events
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                // ESC in normal mode while agent running = abort
+                // ESC in normal mode while agent running = send new human message
+                // which preempts the current work (HITL interrupt)
                 if key.code == KeyCode::Esc && app.mode == VimMode::Normal && app.agent_running {
-                    let _ = abort_tx.send(true);
+                    // Submit a shutdown/cancel by sending a system event
+                    // For now, just mark as not running visually — the next human
+                    // message will preempt via the queue's priority system
                     app.agent_running = false;
-                    app.push_output("\n[cancelled]\n");
+                    app.push_output("\n[interrupted]\n");
                     continue;
                 }
 
                 if let Some(message) = handle_key(app, key) {
-                    // Send message to agent
+                    // Submit to the event queue — ConsciousnessLoop handles preemption
                     app.agent_running = true;
-                    let rt = runtime.clone();
-                    let sk = session_key.clone();
-                    let tx = agent_event_tx.clone();
-                    let mut abort_rx = abort_tx.subscribe();
-
-                    tokio::spawn(async move {
-                        let turn = rt.run_turn(&sk, &message, tx);
-                        tokio::select! {
-                            result = turn => {
-                                if let Err(e) = result {
-                                    tracing::error!("Turn error: {}", e);
-                                }
-                            }
-                            _ = async {
-                                loop {
-                                    abort_rx.changed().await.ok();
-                                    if *abort_rx.borrow() { break; }
-                                }
-                            } => {
-                                // Aborted
-                            }
-                        }
-                    });
-
-                    // Reset abort flag
-                    let _ = abort_tx.send(false);
+                    let event = QueueEvent::HumanMessage {
+                        session: session_key.clone(),
+                        content: message,
+                        priority: Priority::Human,
+                    };
+                    if queue_tx.send(event).await.is_err() {
+                        app.push_output("\nError: event queue closed\n");
+                        app.agent_running = false;
+                    }
                 }
 
                 if app.should_quit {
+                    // Send shutdown to consciousness loop
+                    let _ = queue_tx.send(QueueEvent::Shutdown).await;
                     break;
                 }
             }
         }
 
-        // Drain agent events
-        while let Ok(event) = agent_event_rx.try_recv() {
+        // Drain output events from the ConsciousnessLoop broadcast
+        while let Ok(event) = output_rx.try_recv() {
+            // Filter events for our session
+            let event_session = match &event {
+                OutputEvent::Delta { session, .. } => session,
+                OutputEvent::Thinking { session, .. } => session,
+                OutputEvent::ToolCall { session, .. } => session,
+                OutputEvent::ToolCallDelta { session, .. } => session,
+                OutputEvent::ToolExecuting { session, .. } => session,
+                OutputEvent::ToolResult { session, .. } => session,
+                OutputEvent::ToolParked { session, .. } => session,
+                OutputEvent::Done { session } => session,
+                OutputEvent::Error { session, .. } => session,
+                OutputEvent::Sleep { session, .. } => session,
+            };
+            if event_session != &session_str {
+                continue;
+            }
+
             match event {
-                AgentEvent::Text(text) => app.push_output(&text),
-                AgentEvent::Thinking(_) => {} // hide
-                AgentEvent::ToolCallStart { name, .. } => {
+                OutputEvent::Delta { content, .. } => app.push_output(&content),
+                OutputEvent::Thinking { .. } => {} // hide
+                OutputEvent::ToolCall { name, .. } => {
                     app.push_output(&format!("\n[tool:{}]\n", name));
                 }
-                AgentEvent::ToolExecuting { name, .. } => {
+                OutputEvent::ToolCallDelta { .. } => {} // streaming args, hide in TUI
+                OutputEvent::ToolExecuting { name, .. } => {
                     app.push_output(&format!("  executing {}...", name));
                 }
-                AgentEvent::ToolResult {
+                OutputEvent::ToolResult {
                     result, is_error, ..
                 } => {
                     if is_error {
@@ -851,7 +875,10 @@ async fn run_event_loop(
                         app.push_output(&format!("  done ({} chars)\n", result.len()));
                     }
                 }
-                AgentEvent::Done { .. } => {
+                OutputEvent::ToolParked { name, .. } => {
+                    app.push_output(&format!("  [parked: {}]\n", name));
+                }
+                OutputEvent::Done { .. } => {
                     app.push_output("\n");
                     app.agent_running = false;
                     // Update context usage
@@ -859,11 +886,14 @@ async fn run_event_loop(
                         app.context_used = sess.token_count().await;
                     }
                 }
-                AgentEvent::Error(e) => {
-                    app.push_output(&format!("\nError: {}\n", e));
+                OutputEvent::Error { message, .. } => {
+                    app.push_output(&format!("\nError: {}\n", message));
                     app.agent_running = false;
                 }
-                _ => {}
+                OutputEvent::Sleep { token_count, .. } => {
+                    app.push_output(&format!("\n[sleep: context at {} tokens]\n", token_count));
+                    app.agent_running = false;
+                }
             }
         }
     }

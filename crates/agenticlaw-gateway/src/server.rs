@@ -2,7 +2,9 @@
 
 use crate::auth::ResolvedAuth;
 use crate::ws::{handle_connection, WsState};
-use agenticlaw_agent::{AgentConfig, AgentRuntime, OutputEvent, SessionKey};
+use agenticlaw_agent::{
+    AgentConfig, AgentRuntime, ConsciousnessLoop, ConsciousnessLoopConfig, SessionKey,
+};
 use agenticlaw_core::GatewayConfig;
 use agenticlaw_tools::create_default_registry;
 use axum::{
@@ -14,7 +16,6 @@ use axum::{
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -71,6 +72,11 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         sleep_threshold_pct: 1.0,
     };
 
+    // Save config values before agent_config is moved into AgentRuntime
+    let consciousness_default_model = agent_config.default_model.clone();
+    let consciousness_max_iters = agent_config.max_tool_iterations;
+    let consciousness_sleep_pct = agent_config.sleep_threshold_pct;
+
     // If ANTHROPIC_API_URL is set, use it as the base URL (for protectgateway proxy)
     let agent = if let Ok(api_url) = std::env::var("ANTHROPIC_API_URL") {
         let provider = agenticlaw_llm::AnthropicProvider::new(&api_key)
@@ -85,8 +91,24 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         Arc::new(AgentRuntime::new(&api_key, tools, agent_config))
     };
 
-    // Create broadcast channel for OutputEvents — fan-out to all WS clients
-    let (output_tx, _) = broadcast::channel::<OutputEvent>(1024);
+    // Create the ConsciousnessLoop — single event queue replacing run_turn
+    let consciousness_config = ConsciousnessLoopConfig {
+        default_model: consciousness_default_model,
+        max_tool_iterations: consciousness_max_iters,
+        sleep_threshold_pct: consciousness_sleep_pct,
+        max_context_tokens: 200_000,
+    };
+    let (mut consciousness_loop, queue_tx, output_tx) = ConsciousnessLoop::new(
+        agent.provider().clone(),
+        agent.tools().clone(),
+        agent.sessions().clone(),
+        consciousness_config,
+    );
+
+    // Spawn the consciousness loop as a background task
+    tokio::spawn(async move {
+        consciousness_loop.run().await;
+    });
 
     let state = Arc::new(WsState {
         auth,
@@ -94,6 +116,7 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         layer: layer.clone(),
         port: config.gateway.port,
         output_tx,
+        queue_tx,
         consciousness_enabled: false,
         started_at: std::time::Instant::now(),
     });

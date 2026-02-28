@@ -545,3 +545,270 @@ async fn tool_results_collected_in_single_message() {
         panic!("Expected Blocks content");
     }
 }
+
+// ===========================================================================
+// ConsciousnessLoop / Event Queue (Issue #28)
+// ===========================================================================
+
+#[tokio::test]
+async fn consciousness_loop_processes_human_message() {
+    use agenticlaw_llm::*;
+    use std::sync::Arc;
+
+    // Mock provider that returns a simple text response
+    struct MockProvider;
+
+    #[async_trait::async_trait]
+    impl LlmProvider for MockProvider {
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn models(&self) -> &[&str] {
+            &["mock"]
+        }
+        async fn complete_stream(
+            &self,
+            _request: LlmRequest,
+        ) -> Result<
+            std::pin::Pin<
+                Box<
+                    dyn futures::Stream<
+                            Item = Result<StreamDelta, agenticlaw_llm::provider::LlmError>,
+                        > + Send,
+                >,
+            >,
+            agenticlaw_llm::provider::LlmError,
+        > {
+            let deltas = vec![
+                Ok(StreamDelta::Text("Hello from event queue!".to_string())),
+                Ok(StreamDelta::Done {
+                    stop_reason: Some("end_turn".to_string()),
+                    usage: None,
+                }),
+            ];
+            Ok(Box::pin(futures::stream::iter(deltas)))
+        }
+    }
+
+    let provider = Arc::new(MockProvider);
+    let tools = Arc::new(agenticlaw_tools::ToolRegistry::new());
+    let sessions = Arc::new(SessionRegistry::new());
+    let config = ConsciousnessLoopConfig::default();
+
+    let (mut cl, queue_tx, output_tx) =
+        ConsciousnessLoop::new(provider, tools, sessions.clone(), config);
+
+    // Subscribe to output before spawning
+    let mut output_rx = output_tx.subscribe();
+
+    // Spawn the loop
+    let loop_handle = tokio::spawn(async move {
+        cl.run().await;
+    });
+
+    let sk = SessionKey::new("test-eq");
+    // Ensure session exists
+    sessions.get_or_create(&sk, Some("You are a test agent."));
+
+    // Submit a human message
+    queue_tx
+        .send(QueueEvent::HumanMessage {
+            session: sk.clone(),
+            content: "Hello".to_string(),
+            priority: Priority::Human,
+        })
+        .await
+        .unwrap();
+
+    // Collect output events
+    let mut got_delta = false;
+    let mut got_done = false;
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(5));
+    tokio::pin!(timeout);
+
+    loop {
+        tokio::select! {
+            event = output_rx.recv() => {
+                match event {
+                    Ok(OutputEvent::Delta { content, .. }) => {
+                        assert_eq!(content, "Hello from event queue!");
+                        got_delta = true;
+                    }
+                    Ok(OutputEvent::Done { .. }) => {
+                        got_done = true;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+            _ = &mut timeout => {
+                panic!("Timed out waiting for ConsciousnessLoop output");
+            }
+        }
+    }
+
+    assert!(got_delta, "Should have received Delta event");
+    assert!(got_done, "Should have received Done event");
+
+    // Shutdown
+    queue_tx.send(QueueEvent::Shutdown).await.unwrap();
+    loop_handle.await.unwrap();
+}
+
+#[tokio::test]
+async fn consciousness_loop_hitl_preempts_tools() {
+    use agenticlaw_llm::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    // Track how many LLM calls are made
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_clone = call_count.clone();
+
+    struct PreemptProvider {
+        call_count: Arc<AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmProvider for PreemptProvider {
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn models(&self) -> &[&str] {
+            &["mock"]
+        }
+        async fn complete_stream(
+            &self,
+            _request: LlmRequest,
+        ) -> Result<
+            std::pin::Pin<
+                Box<
+                    dyn futures::Stream<
+                            Item = Result<StreamDelta, agenticlaw_llm::provider::LlmError>,
+                        > + Send,
+                >,
+            >,
+            agenticlaw_llm::provider::LlmError,
+        > {
+            let n = self.call_count.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                // First call: return a tool call that will take a long time
+                let deltas = vec![
+                    Ok(StreamDelta::ToolCallStart {
+                        id: "tc1".into(),
+                        name: "bash".into(),
+                    }),
+                    Ok(StreamDelta::ToolCallDelta {
+                        id: "tc1".into(),
+                        arguments: r#"{"command":"sleep 60"}"#.into(),
+                    }),
+                    Ok(StreamDelta::ToolCallEnd { id: "tc1".into() }),
+                    Ok(StreamDelta::Done {
+                        stop_reason: Some("tool_use".into()),
+                        usage: None,
+                    }),
+                ];
+                Ok(Box::pin(futures::stream::iter(deltas)))
+            } else {
+                // Second call (after preemption): just respond with text
+                let deltas = vec![
+                    Ok(StreamDelta::Text("Preempted!".into())),
+                    Ok(StreamDelta::Done {
+                        stop_reason: Some("end_turn".into()),
+                        usage: None,
+                    }),
+                ];
+                Ok(Box::pin(futures::stream::iter(deltas)))
+            }
+        }
+    }
+
+    let provider = Arc::new(PreemptProvider {
+        call_count: call_count_clone,
+    });
+    let tools = Arc::new(agenticlaw_tools::create_default_registry(
+        std::path::Path::new("/tmp"),
+    ));
+    let sessions = Arc::new(SessionRegistry::new());
+    let config = ConsciousnessLoopConfig::default();
+
+    let (mut cl, queue_tx, output_tx) =
+        ConsciousnessLoop::new(provider, tools, sessions.clone(), config);
+
+    let mut output_rx = output_tx.subscribe();
+
+    let loop_handle = tokio::spawn(async move {
+        cl.run().await;
+    });
+
+    let sk = SessionKey::new("preempt-test");
+    sessions.get_or_create(&sk, Some("Test"));
+
+    // Send first message — triggers tool call
+    queue_tx
+        .send(QueueEvent::HumanMessage {
+            session: sk.clone(),
+            content: "Run something slow".into(),
+            priority: Priority::Human,
+        })
+        .await
+        .unwrap();
+
+    // Wait briefly for tool to start
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    // Send second message — should preempt the tool
+    queue_tx
+        .send(QueueEvent::HumanMessage {
+            session: sk.clone(),
+            content: "Actually, stop that".into(),
+            priority: Priority::Human,
+        })
+        .await
+        .unwrap();
+
+    // Collect events — should see ToolParked and then the preempted response
+    let mut got_parked = false;
+    let mut got_preempted_text = false;
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(10));
+    tokio::pin!(timeout);
+
+    loop {
+        tokio::select! {
+            event = output_rx.recv() => {
+                match event {
+                    Ok(OutputEvent::ToolParked { .. }) => {
+                        got_parked = true;
+                    }
+                    Ok(OutputEvent::Delta { content, .. }) if content == "Preempted!" => {
+                        got_preempted_text = true;
+                    }
+                    Ok(OutputEvent::Done { .. }) if got_preempted_text => {
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+            _ = &mut timeout => {
+                panic!("Timed out waiting for preemption");
+            }
+        }
+    }
+
+    assert!(got_parked, "Tool should have been parked on HITL interrupt");
+    assert!(
+        got_preempted_text,
+        "Should have received preempted response"
+    );
+    assert!(
+        call_count.load(Ordering::SeqCst) >= 2,
+        "LLM should have been called at least twice"
+    );
+
+    queue_tx.send(QueueEvent::Shutdown).await.unwrap();
+    loop_handle.await.unwrap();
+}
