@@ -524,9 +524,9 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             Color::DarkGray
         }));
 
-    if at_bottom && inner_width > 0 {
-        // Count total visual lines after wrapping
-        let total_visual: usize = all_lines
+    // Count total visual lines after wrapping
+    let total_visual: usize = if inner_width > 0 {
+        all_lines
             .iter()
             .map(|l| {
                 let w = l.width();
@@ -536,28 +536,42 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
                     w.div_ceil(inner_width)
                 }
             })
-            .sum();
-
-        let scroll_offset = total_visual.saturating_sub(visible_height) as u16;
-
-        let paragraph = Paragraph::new(all_lines)
-            .block(block)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll_offset, 0));
-
-        frame.render_widget(paragraph, area);
+            .sum()
     } else {
-        // Manual scroll position: show from output_scroll backward
-        let end = app.output_scroll.min(app.output_lines.len());
-        let start = end.saturating_sub(visible_height);
-        let visible: Vec<Line> = all_lines[start..end].to_vec();
+        all_lines.len()
+    };
 
-        let paragraph = Paragraph::new(visible)
-            .block(block)
-            .wrap(Wrap { trim: false });
+    let scroll_offset = if at_bottom {
+        // Pin to bottom
+        total_visual.saturating_sub(visible_height) as u16
+    } else {
+        // Manual scroll: convert output_scroll (raw lines) to visual offset
+        // Approximate by computing visual lines up to output_scroll
+        let target_end = app.output_scroll.min(all_lines.len());
+        let visual_up_to: usize = if inner_width > 0 {
+            all_lines[..target_end]
+                .iter()
+                .map(|l| {
+                    let w = l.width();
+                    if w == 0 {
+                        1
+                    } else {
+                        w.div_ceil(inner_width)
+                    }
+                })
+                .sum()
+        } else {
+            target_end
+        };
+        visual_up_to.saturating_sub(visible_height) as u16
+    };
 
-        frame.render_widget(paragraph, area);
-    }
+    let paragraph = Paragraph::new(all_lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_offset, 0));
+
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
@@ -713,6 +727,8 @@ pub async fn run_tui(
     if ctx_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&ctx_path) {
             app.push_output(&content);
+            // Force pin to absolute bottom — usize::MAX guarantees at_bottom = true
+            app.output_scroll = usize::MAX;
         }
     }
 
