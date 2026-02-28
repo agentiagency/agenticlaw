@@ -542,8 +542,8 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let scroll_offset = if at_bottom {
-        // Pin to bottom
-        total_visual.saturating_sub(visible_height) as u16
+        // Pin to absolute bottom — use u16::MAX, ratatui clamps
+        u16::MAX
     } else {
         // Manual scroll: convert output_scroll (raw lines) to visual offset
         // Approximate by computing visual lines up to output_scroll
