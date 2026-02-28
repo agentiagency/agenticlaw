@@ -792,6 +792,24 @@ async fn run_event_loop(
                 }
 
                 if let Some(message) = handle_key(app, key) {
+                    if app.agent_running {
+                        // Agent is busy — queue HITL message into session
+                        // without spawning a new turn. The agent will see it
+                        // on its next LLM call.
+                        let rt2 = runtime.clone();
+                        let sk2 = session_key.clone();
+                        let msg2 = message.clone();
+                        tokio::spawn(async move {
+                            if let Some(sess) = rt2.sessions().get(&sk2) {
+                                sess.add_user_message(&msg2, 1.0, 200_000).await;
+                            }
+                        });
+                        app.push_output(&format!(
+                            "\n> {}\n[queued — agent is working]\n\n",
+                            message.trim()
+                        ));
+                        continue;
+                    }
                     // Send message to agent
                     app.agent_running = true;
                     let rt = runtime.clone();
