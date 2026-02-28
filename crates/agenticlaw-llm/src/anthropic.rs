@@ -199,16 +199,23 @@ fn parse_sse_stream(
                     }
                     "message_delta" => {
                         if let Ok(data) = serde_json::from_str::<MessageDelta>(&event_data) {
-                            if let Some(stop_reason) = data.delta.stop_reason {
-                                debug!("Message complete: stop_reason={}", stop_reason);
+                            let stop_reason = data.delta.stop_reason.clone();
+                            let usage = data.usage.clone();
+                            if let Some(ref sr) = stop_reason {
+                                debug!(stop_reason = %sr, "Message complete");
                             }
+                            if let Some(ref u) = usage {
+                                info!(input_tokens = u.input_tokens, output_tokens = u.output_tokens, "Token usage");
+                            }
+                            yield Ok(StreamDelta::Done {
+                                stop_reason,
+                                usage,
+                            });
                         }
                     }
                     "message_stop" => {
-                        yield Ok(StreamDelta::Done {
-                            stop_reason: Some("end_turn".to_string()),
-                            usage: None,
-                        });
+                        // message_stop is the final event; if we already emitted Done from
+                        // message_delta above, consumers handle duplicates gracefully.
                     }
                     "error" => {
                         if let Ok(data) = serde_json::from_str::<ErrorEvent>(&event_data) {

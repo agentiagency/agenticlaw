@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::info;
+use tracing::{debug, info};
 
 // Sleep threshold is configured via consciousness.toml [sleep] section
 
@@ -232,6 +232,14 @@ impl Session {
 
         let context = self.context.read().await;
         let total = context.calculate_total(&messages);
+        let utilization_pct = (total as f64 / max_context_tokens as f64) * 100.0;
+        debug!(
+            session = %self.key,
+            tokens = total,
+            utilization = format!("{:.1}%", utilization_pct),
+            messages = messages.len(),
+            "Context utilization after user message"
+        );
         let sleep_threshold = (sleep_threshold_pct * max_context_tokens as f64) as usize;
         if total > sleep_threshold {
             info!(

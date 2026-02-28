@@ -11,7 +11,7 @@ use futures::StreamExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 #[derive(Clone, Debug)]
 pub enum AgentEvent {
@@ -125,6 +125,7 @@ impl AgentRuntime {
         )
     }
 
+    #[instrument(skip(self, user_message, event_tx), fields(session = %session_key))]
     pub async fn run_turn(
         &self,
         session_key: &SessionKey,
@@ -187,6 +188,7 @@ impl AgentRuntime {
             let mut tool_calls: Vec<AccumulatedToolCall> = Vec::new();
             let mut current_tool: Option<AccumulatedToolCall> = None;
             let mut stop_reason = "end_turn".to_string();
+            let mut usage: Option<agenticlaw_llm::Usage> = None;
 
             tokio::pin!(stream);
 
@@ -222,10 +224,14 @@ impl AgentRuntime {
                             }
                         }
                         StreamDelta::Done {
-                            stop_reason: sr, ..
+                            stop_reason: sr,
+                            usage: u,
                         } => {
                             if let Some(r) = sr {
                                 stop_reason = r;
+                            }
+                            if u.is_some() {
+                                usage = u;
                             }
                         }
                         StreamDelta::Error(e) => {
@@ -236,6 +242,19 @@ impl AgentRuntime {
                         let _ = event_tx.send(AgentEvent::Error(e.to_string())).await;
                     }
                 }
+            }
+
+            // Log API response with usage
+            if let Some(ref u) = usage {
+                info!(
+                    turn = iterations,
+                    stop_reason = %stop_reason,
+                    input_tokens = u.input_tokens,
+                    output_tokens = u.output_tokens,
+                    "API response received"
+                );
+            } else {
+                info!(turn = iterations, stop_reason = %stop_reason, "API response received (no usage reported)");
             }
 
             // Save to in-memory session + .ctx file
