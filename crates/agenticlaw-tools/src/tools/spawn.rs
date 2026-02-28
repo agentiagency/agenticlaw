@@ -17,6 +17,71 @@ use tokio::sync::RwLock;
 /// This breaks the circular dependency: tools need runtime, runtime needs tools.
 pub type RuntimeHandle = Arc<RwLock<Option<Arc<dyn SpawnableRuntime>>>>;
 
+/// Shared handle to the subagent registry for lifecycle management.
+pub type SubagentRegistryHandle = Arc<dyn SubagentControl>;
+
+/// Trait for subagent lifecycle control — implemented by SubagentRegistry.
+/// Decouples the tool layer from the agent layer.
+#[async_trait::async_trait]
+pub trait SubagentControl: Send + Sync {
+    /// Register a new subagent, returns its purpose-hash name.
+    fn register(&self, purpose: &str, session_id: &str, parent: Option<&str>) -> String;
+    /// Mark complete with output and tokens.
+    fn mark_complete(&self, name: &str, output: &str, tokens: usize);
+    /// Mark failed.
+    fn mark_failed(&self, name: &str, error: &str);
+    /// Check if paused.
+    fn is_paused(&self, name: &str) -> bool;
+    /// Check if killed.
+    fn is_killed(&self, name: &str) -> bool;
+    /// Wait on the pause gate (blocks until resumed or killed).
+    async fn wait_for_resume(&self, name: &str);
+    /// Pause a subagent (recursive).
+    fn pause(&self, name: &str) -> Result<(), String>;
+    /// Resume a subagent (recursive).
+    fn resume(&self, name: &str) -> Result<(), String>;
+    /// Kill a subagent (recursive).
+    fn kill(&self, name: &str) -> Result<(), String>;
+    /// Query subagent info.
+    fn query(&self, name: &str) -> Result<SubagentInfoSnapshot, String>;
+    /// List all subagents.
+    fn list_all(&self) -> Vec<SubagentInfoSnapshot>;
+    /// Find by prefix.
+    fn find_by_prefix(&self, prefix: &str) -> Option<String>;
+}
+
+/// Snapshot of subagent info (decoupled from agent crate types).
+#[derive(Debug, Clone)]
+pub struct SubagentInfoSnapshot {
+    pub name: String,
+    pub purpose: String,
+    pub status: String,
+    pub tokens: usize,
+    pub elapsed_ms: u64,
+    pub last_output: String,
+    pub children: Vec<String>,
+    pub parent: Option<String>,
+}
+
+impl std::fmt::Display for SubagentInfoSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} [{}] — {} ({}ms, ~{}tok)",
+            self.name, self.status, self.purpose, self.elapsed_ms, self.tokens
+        )?;
+        if !self.last_output.is_empty() {
+            let preview = if self.last_output.len() > 100 {
+                format!("{}...", &self.last_output[..97])
+            } else {
+                self.last_output.clone()
+            };
+            write!(f, "\n  └─ {}", preview)?;
+        }
+        Ok(())
+    }
+}
+
 /// Trait that the agent runtime implements to support spawning.
 /// Decouples the tool from the concrete runtime type.
 #[async_trait::async_trait]
@@ -40,6 +105,8 @@ pub struct SpawnTool {
     runs_dir: Option<PathBuf>,
     /// Counter for generating unique child IDs within a session.
     child_counter: Arc<std::sync::atomic::AtomicU64>,
+    /// Subagent registry for lifecycle tracking.
+    subagent_registry: Option<Arc<RwLock<Option<SubagentRegistryHandle>>>>,
 }
 
 impl SpawnTool {
@@ -49,11 +116,20 @@ impl SpawnTool {
             runtime,
             runs_dir: dirs::home_dir().map(|h| h.join("tmp/kg-runs")),
             child_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            subagent_registry: None,
         }
     }
 
     pub fn with_runs_dir(mut self, dir: impl AsRef<Path>) -> Self {
         self.runs_dir = Some(dir.as_ref().to_path_buf());
+        self
+    }
+
+    pub fn with_subagent_registry(
+        mut self,
+        registry: Arc<RwLock<Option<SubagentRegistryHandle>>>,
+    ) -> Self {
+        self.subagent_registry = Some(registry);
         self
     }
 
@@ -151,6 +227,16 @@ impl Tool for SpawnTool {
             chrono::Utc::now().format("%H%M%S")
         );
 
+        // Register with subagent registry for lifecycle tracking
+        let subagent_name = if let Some(ref reg_handle) = self.subagent_registry {
+            let guard = reg_handle.read().await;
+            guard
+                .as_ref()
+                .map(|reg| reg.register(purpose, &session_id, None))
+        } else {
+            None
+        };
+
         tracing::info!(
             child = %session_id,
             purpose = %purpose,
@@ -230,6 +316,16 @@ impl Tool for SpawnTool {
                     "child completed successfully"
                 );
 
+                // Update subagent registry
+                if let (Some(ref name), Some(ref reg_handle)) =
+                    (&subagent_name, &self.subagent_registry)
+                {
+                    let guard = reg_handle.read().await;
+                    if let Some(ref reg) = *guard {
+                        reg.mark_complete(name, output, *tokens);
+                    }
+                }
+
                 if let Some(ref dir) = run_dir {
                     self.write_artifact(dir, "output.md", output).await;
                     self.write_artifact(
@@ -248,7 +344,8 @@ impl Tool for SpawnTool {
                     )).await;
                 }
 
-                ToolResult::text(output)
+                let name_info = subagent_name.as_deref().unwrap_or(&session_id);
+                ToolResult::text(format!("[{}] {}", name_info, output))
             }
             Err(e) => {
                 tracing::warn!(
@@ -257,6 +354,16 @@ impl Tool for SpawnTool {
                     wall_ms = wall_ms,
                     "child failed"
                 );
+
+                // Update subagent registry
+                if let (Some(ref name), Some(ref reg_handle)) =
+                    (&subagent_name, &self.subagent_registry)
+                {
+                    let guard = reg_handle.read().await;
+                    if let Some(ref reg) = *guard {
+                        reg.mark_failed(name, &e.to_string());
+                    }
+                }
 
                 if let Some(ref dir) = run_dir {
                     self.write_artifact(dir, "output.md", &format!("ERROR: {}", e))

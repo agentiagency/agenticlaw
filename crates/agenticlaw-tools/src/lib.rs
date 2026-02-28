@@ -8,7 +8,11 @@ pub mod registry;
 pub mod tools;
 
 pub use registry::{Tool, ToolRegistry, ToolResult};
-pub use tools::spawn::{RuntimeHandle, SpawnTool, SpawnableRuntime};
+pub use tools::spawn::{
+    RuntimeHandle, SpawnTool, SpawnableRuntime, SubagentControl, SubagentInfoSnapshot,
+    SubagentRegistryHandle,
+};
+pub use tools::subagent::SubagentTool;
 
 use std::path::Path;
 use std::sync::Arc;
