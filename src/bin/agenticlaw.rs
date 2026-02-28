@@ -12,6 +12,7 @@ use agenticlaw_consciousness::stack::ConsciousnessStack;
 use agenticlaw_core::{AuthConfig, AuthMode, BindMode, GatewayConfig};
 use agenticlaw_gateway::{start_gateway, ExtendedConfig};
 use clap::{Parser, Subcommand};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -153,20 +154,8 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
 
-    // Resolve workspace
-    let workspace = cli
-        .workspace
-        .clone()
-        .or_else(|| {
-            std::env::var("AGENTICLAW_WORKSPACE")
-                .ok()
-                .map(PathBuf::from)
-        })
-        .or_else(|| std::env::var("RUSTCLAW_WORKSPACE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/home/devkit".to_string());
-            PathBuf::from(home).join(".agenticlaw/consciousness")
-        });
+    // Resolve workspace — defaults to ~/.openclaw if port 18789 is free (#13)
+    let workspace = resolve_home(cli.workspace.as_ref()).join("consciousness");
     std::fs::create_dir_all(&workspace)?;
 
     // Resolve souls directory
@@ -237,20 +226,11 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
             token: cli.token.clone(),
         }
     };
-    let workspace_root = cli
-        .workspace
-        .clone()
-        .or_else(|| {
-            std::env::var("AGENTICLAW_WORKSPACE")
-                .ok()
-                .map(PathBuf::from)
-        })
-        .or_else(|| std::env::var("RUSTCLAW_WORKSPACE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let workspace_root = resolve_home(cli.workspace.as_ref());
 
     let config = ExtendedConfig {
         gateway: GatewayConfig {
-            port: cli.port,
+            port: resolve_port(cli.port),
             bind: bind_mode,
             auth,
         },
@@ -260,6 +240,62 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
     };
     start_gateway(config).await?;
     Ok(())
+}
+
+/// Check if a TCP port is in use on localhost.
+fn port_in_use(port: u16) -> bool {
+    TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+/// Resolve the agenticlaw home directory per issue #13 spec:
+///
+/// 1. If `--workspace` / `AGENTICLAW_WORKSPACE` is set, use that.
+/// 2. If port 18789 is free → `~/.openclaw` (drop-in replacement for openclaw).
+/// 3. If port 18789 is occupied (openclaw running) → `~/.agenticlaw` (coexist).
+fn resolve_home(explicit: Option<&PathBuf>) -> PathBuf {
+    // Explicit flag or env var wins
+    if let Some(p) = explicit {
+        return p.clone();
+    }
+    if let Ok(env_ws) = std::env::var("AGENTICLAW_WORKSPACE") {
+        return PathBuf::from(env_ws);
+    }
+    if let Ok(env_ws) = std::env::var("RUSTCLAW_WORKSPACE") {
+        return PathBuf::from(env_ws);
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/devkit".to_string());
+    let home = PathBuf::from(home);
+
+    if port_in_use(18789) {
+        // openclaw is running — use separate home
+        home.join(".agenticlaw")
+    } else {
+        // Port free — slide into openclaw's home
+        home.join(".openclaw")
+    }
+}
+
+/// Resolve the default port: if 18789 is occupied, try 18799 then scan upward.
+fn resolve_port(requested: u16) -> u16 {
+    if !port_in_use(requested) {
+        return requested;
+    }
+    // If the requested port (likely 18789) is taken, try 18799 then scan
+    let alternates = [18799u16];
+    for p in alternates {
+        if !port_in_use(p) {
+            return p;
+        }
+    }
+    // Scan upward from 18800
+    for p in 18800..=18899 {
+        if !port_in_use(p) {
+            return p;
+        }
+    }
+    // Last resort: return requested and let bind fail with a clear error
+    requested
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
