@@ -57,6 +57,10 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     no_auth: bool,
 
+    /// Force local mode (don't connect to daemon) when using --session
+    #[arg(long, default_value_t = false)]
+    local: bool,
+
     /// Write logs to a file (in addition to stderr)
     #[arg(long)]
     log_file: Option<String>,
@@ -94,6 +98,9 @@ enum Commands {
         /// Resume a session (latest, or specific if --session is given)
         #[arg(short, long)]
         resume: bool,
+        /// Force local mode (don't connect to daemon)
+        #[arg(long, default_value_t = false)]
+        local: bool,
     },
     /// Show version
     Version,
@@ -110,7 +117,30 @@ async fn main() -> anyhow::Result<()> {
             session,
             model,
             resume,
+            local,
         }) => {
+            if !local {
+                if let Some(ref sess) = session {
+                    let port = cli.port;
+                    let url = format!("ws://127.0.0.1:{}", port);
+                    if daemon_is_reachable(port).await {
+                        let token_str = cli
+                            .token
+                            .clone()
+                            .or_else(|| std::env::var("AGENTICLAW_GATEWAY_TOKEN").ok())
+                            .or_else(|| std::env::var("RUSTCLAW_GATEWAY_TOKEN").ok())
+                            .or_else(|| std::env::var("OPENCLAW_GATEWAY_TOKEN").ok());
+                        agenticlaw_gateway::tui_client::run_tui_remote(
+                            &url,
+                            sess,
+                            token_str.as_deref(),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    eprintln!("No daemon running on port {}, starting local TUI...", port);
+                }
+            }
             agenticlaw_gateway::tui::run_tui(workspace, session, model, resume).await?;
         }
 
@@ -121,9 +151,35 @@ async fn main() -> anyhow::Result<()> {
 
         // No subcommand — default behavior
         None => {
-            // If --session provided → TUI chat
-            if cli.session.is_some() {
-                agenticlaw_gateway::tui::run_tui(cli.workspace, cli.session, None, false).await?;
+            // If --session provided → TUI chat (try daemon first)
+            if let Some(ref session_name) = cli.session {
+                if !cli.local {
+                    let port = cli.port;
+                    if daemon_is_reachable(port).await {
+                        let url = format!("ws://127.0.0.1:{}", port);
+                        let token_str = cli
+                            .token
+                            .clone()
+                            .or_else(|| std::env::var("AGENTICLAW_GATEWAY_TOKEN").ok())
+                            .or_else(|| std::env::var("RUSTCLAW_GATEWAY_TOKEN").ok())
+                            .or_else(|| std::env::var("OPENCLAW_GATEWAY_TOKEN").ok());
+                        agenticlaw_gateway::tui_client::run_tui_remote(
+                            &url,
+                            session_name,
+                            token_str.as_deref(),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    eprintln!("No daemon running on port {}, starting local TUI...", port);
+                }
+                agenticlaw_gateway::tui::run_tui(
+                    cli.workspace.clone(),
+                    cli.session.clone(),
+                    None,
+                    false,
+                )
+                .await?;
             } else if cli.no_consciousness {
                 // Lightweight gateway-only mode (customer images)
                 init_tracing();
@@ -260,6 +316,17 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
     };
     start_gateway(config).await?;
     Ok(())
+}
+
+/// Check if a daemon is running on the given port by attempting a TCP connection.
+async fn daemon_is_reachable(port: u16) -> bool {
+    tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
 }
 
 fn expand_tilde(path: &str) -> PathBuf {

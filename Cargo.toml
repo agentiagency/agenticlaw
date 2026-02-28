@@ -72,6 +72,9 @@ pin-project-lite = "0.2"
 # Cancellation
 tokio-util = { version = "0.7", features = ["rt"] }
 
+# WebSocket client
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+
 [profile.release]
 strip = true
 lto = true

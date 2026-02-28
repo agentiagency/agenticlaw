@@ -36,3 +36,5 @@ chrono = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url = "2"
