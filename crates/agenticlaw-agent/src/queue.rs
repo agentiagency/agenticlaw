@@ -151,6 +151,8 @@ pub enum OutputEvent {
     Error { session: String, message: String },
     /// Session sleeping
     Sleep { session: String, token_count: usize },
+    /// .ctx file updated — full content for client catchup
+    CtxUpdate { session: String, content: String },
 }
 
 // ---------------------------------------------------------------------------
