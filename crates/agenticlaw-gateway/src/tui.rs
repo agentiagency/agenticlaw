@@ -524,9 +524,9 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
             Color::DarkGray
         }));
 
-    // Count total visual lines after wrapping
-    let total_visual: usize = if inner_width > 0 {
-        all_lines
+    if at_bottom && inner_width > 0 {
+        // Count total visual lines after wrapping
+        let total_visual: usize = all_lines
             .iter()
             .map(|l| {
                 let w = l.width();
@@ -536,42 +536,28 @@ fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
                     w.div_ceil(inner_width)
                 }
             })
-            .sum()
+            .sum();
+
+        let scroll_offset = total_visual.saturating_sub(visible_height) as u16;
+
+        let paragraph = Paragraph::new(all_lines)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll_offset, 0));
+
+        frame.render_widget(paragraph, area);
     } else {
-        all_lines.len()
-    };
+        // Manual scroll position: show from output_scroll backward
+        let end = app.output_scroll.min(app.output_lines.len());
+        let start = end.saturating_sub(visible_height);
+        let visible: Vec<Line> = all_lines[start..end].to_vec();
 
-    let scroll_offset = if at_bottom {
-        // Pin to absolute bottom — use u16::MAX, ratatui clamps
-        u16::MAX
-    } else {
-        // Manual scroll: convert output_scroll (raw lines) to visual offset
-        // Approximate by computing visual lines up to output_scroll
-        let target_end = app.output_scroll.min(all_lines.len());
-        let visual_up_to: usize = if inner_width > 0 {
-            all_lines[..target_end]
-                .iter()
-                .map(|l| {
-                    let w = l.width();
-                    if w == 0 {
-                        1
-                    } else {
-                        w.div_ceil(inner_width)
-                    }
-                })
-                .sum()
-        } else {
-            target_end
-        };
-        visual_up_to.saturating_sub(visible_height) as u16
-    };
+        let paragraph = Paragraph::new(visible)
+            .block(block)
+            .wrap(Wrap { trim: false });
 
-    let paragraph = Paragraph::new(all_lines)
-        .block(block)
-        .wrap(Wrap { trim: false })
-        .scroll((scroll_offset, 0));
-
-    frame.render_widget(paragraph, area);
+        frame.render_widget(paragraph, area);
+    }
 }
 
 fn draw_editor(frame: &mut Frame, app: &App, area: Rect) {
@@ -723,12 +709,18 @@ pub async fn run_tui(
     let session_id = session_key.as_str().to_string();
     let mut app = App::new(&default_model, &session_id, &ctx_path.to_string_lossy());
 
-    // Load existing .ctx content into the output scroll so the agent sees full history
+    // Load tail of existing .ctx content into TUI output for visual context.
+    // Full history is already in the session messages for the LLM.
     if ctx_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&ctx_path) {
-            app.push_output(&content);
-            // Force pin to absolute bottom — usize::MAX guarantees at_bottom = true
-            app.output_scroll = usize::MAX;
+            // Show last ~200 lines to avoid scroll issues with massive files
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(200);
+            if start > 0 {
+                app.push_output(&format!("... ({} earlier lines) ...\n\n", start));
+            }
+            let tail = lines[start..].join("\n");
+            app.push_output(&tail);
         }
     }
 
