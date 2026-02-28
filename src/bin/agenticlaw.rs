@@ -153,8 +153,9 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
 
-    // Resolve workspace
-    let workspace = cli
+    // Resolve workspace — the consciousness workspace is a sibling of the gateway workspace.
+    // L0 workspace = gateway workspace, L1-L3 + cores live under the consciousness workspace.
+    let consciousness_workspace = cli
         .workspace
         .clone()
         .or_else(|| {
@@ -167,7 +168,11 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/home/devkit".to_string());
             PathBuf::from(home).join(".agenticlaw/consciousness")
         });
-    std::fs::create_dir_all(&workspace)?;
+    std::fs::create_dir_all(&consciousness_workspace)?;
+
+    // The gateway workspace is L0's workspace inside the consciousness tree
+    let gateway_workspace = consciousness_workspace.join("L0");
+    std::fs::create_dir_all(&gateway_workspace)?;
 
     // Resolve souls directory
     let souls = cli
@@ -192,7 +197,7 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
         .config
         .as_ref()
         .map(|p| expand_tilde(p))
-        .unwrap_or_else(|| workspace.join("consciousness.toml"));
+        .unwrap_or_else(|| consciousness_workspace.join("consciousness.toml"));
     let config = ConsciousnessConfig::load(&config_path);
 
     println!("╔══════════════════════════════════════════════════╗");
@@ -200,23 +205,82 @@ async fn start_conscious(cli: &Cli) -> anyhow::Result<()> {
         "║         AGENTICLAW v{}                       ║",
         env!("CARGO_PKG_VERSION")
     );
-    println!("║              Conscious Agent Runtime             ║");
+    println!("║         Conscious Agent Runtime (Embedded)       ║");
     println!("╠══════════════════════════════════════════════════╣");
     println!("║  L0  Gateway      :{}  ← you are here        ║", cli.port);
-    println!("║  L1  Attention    :18791  ← watching             ║");
-    println!("║  L2  Pattern      :18792  ← thinking             ║");
-    println!("║  L3  Integration  :18793  ← understanding        ║");
-    println!("║  Core-A           :18794  ← remembering          ║");
-    println!("║  Core-B           :18795  ← remembering          ║");
+    println!("║  L1  Attention          ← watching (embedded)    ║");
+    println!("║  L2  Pattern            ← thinking (embedded)    ║");
+    println!("║  L3  Integration        ← understanding          ║");
+    println!("║  Core-A                 ← remembering            ║");
+    println!("║  Core-B                 ← remembering            ║");
     println!("╠══════════════════════════════════════════════════╣");
     println!("║  Sacred: /health /surface /plan /test /hints     ║");
     println!("╚══════════════════════════════════════════════════╝");
     println!();
-    tracing::info!("Workspace: {}", workspace.display());
+    tracing::info!(
+        "Consciousness workspace: {}",
+        consciousness_workspace.display()
+    );
+    tracing::info!("Gateway workspace (L0): {}", gateway_workspace.display());
     tracing::info!("Souls: {}", souls.display());
 
-    let stack = ConsciousnessStack::new(workspace, souls, api_key, config);
-    stack.launch(cli.birth).await?;
+    // Spawn the consciousness cascade (L1-L3 + dual core) in the background
+    let cascade_stack = ConsciousnessStack::new(
+        consciousness_workspace,
+        souls.clone(),
+        api_key.clone(),
+        config.clone(),
+    );
+    let birth = cli.birth;
+    let _cascade_handle = tokio::spawn(async move {
+        // Wait briefly for the gateway to start before watching its .ctx files
+        tokio::time::sleep(std::time::Duration::from_secs(
+            config.cascade.gateway_settle_secs,
+        ))
+        .await;
+        if let Err(e) = cascade_stack.launch_cascade(birth).await {
+            tracing::error!("Consciousness cascade failed: {}", e);
+        }
+    });
+
+    // Start the gateway as L0 — this blocks until the gateway shuts down
+    let bind_mode = match cli.bind.as_str() {
+        "loopback" | "localhost" | "127.0.0.1" => BindMode::Loopback,
+        _ => BindMode::Lan,
+    };
+    let auth = if cli.no_auth {
+        AuthConfig {
+            mode: AuthMode::None,
+            token: None,
+        }
+    } else {
+        AuthConfig {
+            mode: AuthMode::Token,
+            token: cli.token.clone(),
+        }
+    };
+
+    // Write L0 soul file so the gateway can discover it
+    let l0_soul_path = gateway_workspace.join("SOUL.md");
+    if !l0_soul_path.exists() {
+        let l0_soul = souls.join("L0-gateway.md");
+        if l0_soul.exists() {
+            let _ = std::fs::copy(&l0_soul, &l0_soul_path);
+        }
+    }
+
+    let gw_config = ExtendedConfig {
+        gateway: GatewayConfig {
+            port: cli.port,
+            bind: bind_mode,
+            auth,
+        },
+        anthropic_api_key: Some(api_key),
+        workspace_root: gateway_workspace,
+        system_prompt: cli.system_prompt.clone(),
+        consciousness_enabled: true,
+    };
+    start_gateway(gw_config).await?;
 
     Ok(())
 }
@@ -257,6 +321,7 @@ async fn start_gateway_only(cli: &Cli) -> anyhow::Result<()> {
         anthropic_api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
         workspace_root,
         system_prompt: cli.system_prompt.clone(),
+        consciousness_enabled: false,
     };
     start_gateway(config).await?;
     Ok(())

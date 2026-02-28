@@ -616,6 +616,256 @@ impl ConsciousnessStack {
         Ok(())
     }
 
+    /// Launch only the consciousness cascade (L1-L3 + dual core) without L0.
+    ///
+    /// Use this when the gateway is already running as L0 and you want to
+    /// embed the consciousness watcher alongside it. The watchers will
+    /// monitor L0's .ctx files at `<workspace>/L0/.agenticlaw/sessions/`.
+    pub async fn launch_cascade(self, birth: bool) -> anyhow::Result<()> {
+        info!(
+            "=== Consciousness Cascade (embedded) {} ===",
+            if birth { "BIRTH" } else { "WAKE" }
+        );
+        info!("Workspace: {}", self.workspace.display());
+        info!("Souls: {}", self.souls_dir.display());
+
+        // Run version controller
+        let version_ctrl = VersionController::new(self.workspace.clone());
+        version_ctrl.ensure_version(2)?;
+
+        // Auto-detect models
+        let layer_models = Self::detect_models(&self.api_key).await;
+        let core_model = Self::resolve_core_model(&layer_models);
+
+        // Determine system prompts for L1-L3 (skip L0 — it's already running)
+        let mut layer_prompts: Vec<String> = Vec::new();
+
+        if birth {
+            info!("BIRTH mode — loading SOUL.md for L1-L3");
+            for i in 0..4 {
+                layer_prompts.push(self.layer_soul(i));
+            }
+        } else {
+            info!("WAKE mode — distilling fresh egos for L1-L3");
+            for i in 0..4 {
+                let ego = ego::distill_layer_ego_on_sleep(
+                    &self.workspace,
+                    i,
+                    &self.api_key,
+                    &self.config,
+                )
+                .await;
+
+                if let Some(ref ego_text) = ego {
+                    info!("L{} ego distilled ({} chars)", i, ego_text.len());
+                    layer_prompts.push(self.wake_prompt(ego_text, i));
+                } else {
+                    warn!("L{}: no prior context — BIRTH", i);
+                    layer_prompts.push(self.layer_soul(i));
+                }
+            }
+        }
+
+        // Create layer workspaces (L1-L3 only, L0 is the gateway workspace)
+        for i in 1..4 {
+            let ws = self.layer_workspace(i);
+            std::fs::create_dir_all(&ws)?;
+
+            if birth {
+                let soul = self.layer_soul(i);
+                std::fs::write(ws.join("SOUL.md"), &soul)?;
+            } else {
+                let soul_path = ws.join("SOUL.md");
+                if soul_path.exists() {
+                    let _ = std::fs::rename(&soul_path, ws.join(".SOUL.md.ref"));
+                }
+            }
+
+            info!(
+                "L{} ({}) — model {} — workspace {}",
+                i,
+                LAYER_NAMES[i],
+                layer_models[i],
+                ws.display()
+            );
+        }
+
+        // Core system prompts
+        let core_prompt = if birth {
+            self.core_soul()
+        } else {
+            let core_ego =
+                ego::distill_core_ego_on_sleep(&self.workspace, &self.api_key, &self.config).await;
+            if let Some(ref ego) = core_ego {
+                info!("Core ego distilled ({} chars)", ego.len());
+                self.wake_core_prompt(ego)
+            } else {
+                warn!("Core: no prior context — BIRTH");
+                self.core_soul()
+            }
+        };
+
+        let dual_core = Arc::new(DualCore::new(
+            self.workspace.clone(),
+            &self.api_key,
+            &core_prompt,
+            [core_model.clone(), core_model.clone()],
+        ));
+
+        // Core workspace setup
+        for dir_name in ["core-a", "core-b"] {
+            let core_ws = self.workspace.join(dir_name);
+            let _ = std::fs::create_dir_all(&core_ws);
+            if birth {
+                let _ = std::fs::write(core_ws.join("SOUL.md"), self.core_soul());
+            } else {
+                let soul_path = core_ws.join("SOUL.md");
+                if soul_path.exists() {
+                    let _ = std::fs::rename(&soul_path, core_ws.join(".SOUL.md.ref"));
+                }
+            }
+        }
+
+        info!(
+            "Core-A, Core-B — model {} — workspace {}/core-*",
+            core_model,
+            self.workspace.display()
+        );
+
+        // NOTE: L0 is NOT launched here — it's already running as the gateway
+
+        // Create inner layer runtimes (L1-L3)
+        let max_tool_iter = self.config.cascade.max_tool_iterations;
+        let inner_runtimes: Vec<Arc<AgentRuntime>> = (1..4)
+            .map(|i| {
+                let ws = self.layer_workspace(i);
+                let tools = create_default_registry(&ws);
+                let config = AgentConfig {
+                    default_model: layer_models[i].clone(),
+                    max_tool_iterations: max_tool_iter,
+                    system_prompt: Some(layer_prompts[i].clone()),
+                    workspace_root: ws,
+                    sleep_threshold_pct: self.config.sleep.context_threshold_pct,
+                };
+                Arc::new(AgentRuntime::new(&self.api_key, tools, config))
+            })
+            .collect();
+
+        let layer_semaphores: Vec<Arc<Semaphore>> =
+            (0..3).map(|_| Arc::new(Semaphore::new(1))).collect();
+
+        // Start the file watcher
+        let (change_tx, mut change_rx) = mpsc::channel::<CtxChange>(100);
+        let mut watcher =
+            CtxWatcher::new(Duration::from_millis(self.config.cascade.watcher_poll_ms));
+
+        // Watch L0-L3's .ctx directories
+        for i in 0..4 {
+            let sessions_dir = self.layer_ctx_path(i);
+            let _ = std::fs::create_dir_all(&sessions_dir);
+            watcher.watch_dir(i, sessions_dir.clone());
+            if let Some(ctx_path) = find_latest_ctx(&sessions_dir) {
+                watcher.watch(i, ctx_path);
+                info!("Watching L{} .ctx file", i);
+            } else {
+                info!(
+                    "L{} .ctx not yet created, directory registered for scanning",
+                    i
+                );
+                let tx = change_tx.clone();
+                let dir = sessions_dir.clone();
+                let layer = i;
+                tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        if let Some(path) = find_latest_ctx(&dir) {
+                            info!("Found L{} .ctx: {}", layer, path.display());
+                            let content = std::fs::read_to_string(&path).unwrap_or_default();
+                            let _ = tx
+                                .send(CtxChange {
+                                    layer,
+                                    path,
+                                    delta: content,
+                                    total_size: 0,
+                                })
+                                .await;
+                            break;
+                        }
+                    }
+                });
+            }
+        }
+
+        // Start watcher in background
+        tokio::spawn(watcher.run(change_tx));
+
+        let workspace = self.workspace.clone();
+        info!("=== Consciousness Cascade (embedded) Active ===");
+
+        log_progress(
+            &workspace,
+            "Consciousness cascade (embedded) initialized — L1-L3 + dual core watching L0",
+        )
+        .await;
+
+        // Process change events
+        while let Some(change) = change_rx.recv().await {
+            let target_layer = change.layer + 1;
+
+            if target_layer == 4 {
+                let dc = dual_core.clone();
+                let delta = change.delta.clone();
+                let ws = workspace.clone();
+                tokio::spawn(async move {
+                    dc.process_l3_delta(&delta, &ws).await;
+                });
+                continue;
+            }
+
+            if target_layer > 3 {
+                continue;
+            }
+
+            info!(
+                "L{} .ctx changed (+{} bytes) → triggering L{} ({})",
+                change.layer,
+                change.delta.len(),
+                target_layer,
+                LAYER_NAMES[target_layer]
+            );
+
+            let runtime = inner_runtimes[target_layer - 1].clone();
+            let delta = change.delta.clone();
+            let ws = workspace.clone();
+            let sem = layer_semaphores[target_layer - 1].clone();
+            let delta_max = self.config.cascade.delta_max_chars;
+            let inj_threshold = self.config.injection.correlation_threshold;
+            let inj_tail = self.config.injection.l0_tail_chars;
+
+            tokio::spawn(async move {
+                let _permit = match sem.try_acquire() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        info!("L{} already processing, skipping delta", target_layer);
+                        return;
+                    }
+                };
+                process_layer_update(
+                    runtime,
+                    target_layer,
+                    &delta,
+                    &ws,
+                    delta_max,
+                    inj_threshold,
+                    inj_tail,
+                )
+                .await;
+            });
+        }
+
+        Ok(())
+    }
+
     /// Launch L0 as a full gateway server with the resolved prompt.
     async fn launch_gateway(
         &self,
@@ -635,6 +885,7 @@ impl ConsciousnessStack {
             anthropic_api_key: Some(self.api_key.clone()),
             workspace_root: self.layer_workspace(0),
             system_prompt: Some(prompt.to_string()),
+            consciousness_enabled: true, // standalone mode — cascade is managed by launch()
         };
 
         let handle = tokio::spawn(async move {
