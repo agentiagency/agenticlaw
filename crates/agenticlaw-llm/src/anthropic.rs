@@ -5,6 +5,7 @@ use crate::types::{LlmRequest, StreamDelta, Usage};
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -45,7 +46,11 @@ impl LlmProvider for AnthropicProvider {
         ]
     }
 
-    async fn complete_stream(&self, request: LlmRequest) -> LlmResult<LlmStream> {
+    async fn complete_stream(
+        &self,
+        request: LlmRequest,
+        cancel: Option<CancellationToken>,
+    ) -> LlmResult<LlmStream> {
         // Heal any orphaned tool_use blocks before sending
         let healed_messages = crate::types::validate_and_heal_messages(&request.messages);
 
@@ -117,13 +122,14 @@ impl LlmProvider for AnthropicProvider {
             }
         }
 
-        let stream = parse_sse_stream(response.bytes_stream());
+        let stream = parse_sse_stream(response.bytes_stream(), cancel);
         Ok(Box::pin(stream))
     }
 }
 
 fn parse_sse_stream(
     bytes_stream: impl futures::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+    cancel: Option<CancellationToken>,
 ) -> impl futures::Stream<Item = LlmResult<StreamDelta>> + Send {
     async_stream::stream! {
         let mut buffer = String::new();
@@ -131,7 +137,29 @@ fn parse_sse_stream(
 
         tokio::pin!(bytes_stream);
 
-        while let Some(chunk_result) = bytes_stream.next().await {
+        loop {
+            // Use select! to race the next chunk against cancellation
+            let chunk_result = if let Some(ref token) = cancel {
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        yield Err(LlmError::Cancelled);
+                        break;
+                    }
+                    next = bytes_stream.next() => {
+                        match next {
+                            Some(r) => r,
+                            None => break,
+                        }
+                    }
+                }
+            } else {
+                match bytes_stream.next().await {
+                    Some(r) => r,
+                    None => break,
+                }
+            };
+
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(e) => {

@@ -785,6 +785,8 @@ async fn run_event_loop(
             if let Event::Key(key) = event::read()? {
                 // ESC in normal mode while agent running = abort
                 if key.code == KeyCode::Esc && app.mode == VimMode::Normal && app.agent_running {
+                    let rt_abort = runtime.clone();
+                    tokio::spawn(async move { rt_abort.abort().await });
                     let _ = abort_tx.send(true);
                     app.agent_running = false;
                     app.push_output("\n[cancelled]\n");
