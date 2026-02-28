@@ -140,6 +140,14 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
                         session: fwd_session.clone(),
                         message: e,
                     },
+                    // New events — map to existing OutputEvent types or skip
+                    AgentEvent::AgentStart
+                    | AgentEvent::TurnStart { .. }
+                    | AgentEvent::TurnEnd { .. }
+                    | AgentEvent::ToolSkipped { .. }
+                    | AgentEvent::SteeringInjected { .. }
+                    | AgentEvent::FollowUpInjected { .. }
+                    | AgentEvent::Aborted => continue,
                 };
                 let _ = fwd_output_tx.send(output);
             }
