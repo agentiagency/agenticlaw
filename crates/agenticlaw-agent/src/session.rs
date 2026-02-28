@@ -164,6 +164,8 @@ pub struct Session {
     ctx_path: Option<PathBuf>,
     abort_tx: mpsc::Sender<()>,
     abort_rx: RwLock<Option<mpsc::Receiver<()>>>,
+    /// Count of user messages added since last LLM call — for detecting injected HITL input
+    pending_user_messages: std::sync::atomic::AtomicUsize,
 }
 
 impl Session {
@@ -190,6 +192,7 @@ impl Session {
             ctx_path,
             abort_tx,
             abort_rx: RwLock::new(Some(abort_rx)),
+            pending_user_messages: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -228,6 +231,8 @@ impl Session {
         };
         let mut messages = self.messages.write().await;
         messages.push(message);
+        self.pending_user_messages
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // Persist to .ctx
         if let Some(ref path) = self.ctx_path {
@@ -369,6 +374,19 @@ impl Session {
     }
     pub async fn message_count(&self) -> usize {
         self.messages.read().await.len()
+    }
+
+    /// Check if there are pending user messages injected since last drain.
+    pub fn has_pending_input(&self) -> bool {
+        self.pending_user_messages
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+    }
+
+    /// Drain the pending user message counter (call before LLM request).
+    pub fn drain_pending_input(&self) -> usize {
+        self.pending_user_messages
+            .swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 
     pub async fn token_count(&self) -> usize {

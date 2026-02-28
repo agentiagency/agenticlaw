@@ -157,6 +157,10 @@ impl AgentRuntime {
                 break;
             }
 
+            // Drain pending input counter before LLM call — any new messages
+            // injected DURING this call will be detected after it completes.
+            session.drain_pending_input();
+
             let messages = session.get_messages().await;
             let model = session
                 .model()
@@ -263,6 +267,15 @@ impl AgentRuntime {
             }
 
             if tool_calls.is_empty() {
+                // Check for HITL messages injected during this turn
+                if session.has_pending_input() {
+                    let pending = session.drain_pending_input();
+                    info!(
+                        pending_messages = pending,
+                        "HITL input received during turn, continuing loop"
+                    );
+                    continue;
+                }
                 info!(stop_reason = %stop_reason, text_len = text_content.len(), "Response complete (no tool calls)");
                 let _ = event_tx.send(AgentEvent::Done { stop_reason }).await;
                 break;
