@@ -14,7 +14,6 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMsg};
 
-/// Connect to a running gateway and run the TUI.
 pub async fn run_tui_client(
     port: u16,
     session: String,
@@ -22,7 +21,6 @@ pub async fn run_tui_client(
 ) -> anyhow::Result<()> {
     let url = format!("ws://127.0.0.1:{}/ws", port);
 
-    // Connect
     let (ws_stream, _) = connect_async(&url)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to gateway at {}: {}", url, e))?;
@@ -35,10 +33,8 @@ pub async fn run_tui_client(
 
     // Wait for auth response
     if let Some(Ok(WsMsg::Text(text))) = ws_rx.next().await {
-        // Could be info event, skip it
         let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
         if v.get("event").and_then(|e| e.as_str()) == Some("info") {
-            // Read next message for auth
             if let Some(Ok(WsMsg::Text(auth_text))) = ws_rx.next().await {
                 let auth: serde_json::Value = serde_json::from_str(&auth_text).unwrap_or_default();
                 if auth.get("event").and_then(|e| e.as_str()) == Some("auth") {
@@ -56,7 +52,6 @@ pub async fn run_tui_client(
         }
     }
 
-    // Setup TUI
     let mut app = App::new("remote", &session, "(remote)");
     app.push_output(&format!("Connected to gateway at 127.0.0.1:{}\n", port));
     app.push_output(&format!("Session: {}\n\n", session));
@@ -81,15 +76,12 @@ pub async fn run_tui_client(
 
         let timeout = std::time::Duration::from_millis(16);
 
-        // Check terminal input
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                // Ctrl-C quits
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     break;
                 }
 
-                // ESC in normal mode while running = abort
                 if key.code == KeyCode::Esc && app.mode == VimMode::Normal && app.agent_running {
                     req_id += 1;
                     let abort = serde_json::json!({
@@ -104,7 +96,6 @@ pub async fn run_tui_client(
                 }
 
                 if let Some(message) = handle_key(&mut app, key) {
-                    // Send via RPC
                     req_id += 1;
                     let rpc = serde_json::json!({
                         "id": format!("req-{}", req_id),
@@ -140,7 +131,7 @@ pub async fn run_tui_client(
                     app.should_quit = true;
                     break;
                 }
-                _ => break, // No message ready
+                _ => break,
             }
         }
 
@@ -149,17 +140,13 @@ pub async fn run_tui_client(
         }
     }
 
-    // Restore terminal
     terminal::disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
-
-    // Close WS gracefully
     let _ = ws_tx.send(WsMsg::Close(None)).await;
 
     Ok(())
 }
 
-/// Parse a gateway event and update the App state.
 fn handle_ws_event(app: &mut App, text: &str) {
     let v: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -186,10 +173,7 @@ fn handle_ws_event(app: &mut App, text: &str) {
                     let content = data["content"].as_str().unwrap_or("");
                     let is_error = data["is_error"].as_bool().unwrap_or(false);
                     if is_error {
-                        app.push_output(&format!(
-                            "  error: {}\n",
-                            &content[..content.len().min(200)]
-                        ));
+                        app.push_output(&format!("  error: {}\n", &content[..content.len().min(200)]));
                     } else {
                         app.push_output(&format!("  done ({} chars)\n", content.len()));
                     }

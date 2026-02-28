@@ -1,0 +1,73 @@
+# Purpose consciousness container — builds from agenticlaw workspace
+# Usage: docker build -t purpose-2-21 -f agenticlaw/Dockerfile.purpose .
+
+# ── Stage 1: Build all binaries ──
+FROM rust:latest AS builder
+
+WORKDIR /src/agenticlaw
+COPY agenticlaw/Cargo.toml agenticlaw/Cargo.lock ./
+COPY agenticlaw/crates/ crates/
+COPY agenticlaw/src/ src/
+
+RUN cargo build --release \
+        -p agenticlaw \
+        -p agenticlaw-gateway \
+        -p agenticlaw-consciousness \
+    && cp target/release/agenticlaw /usr/local/bin/ \
+    && cp target/release/agenticlaw-consciousness /usr/local/bin/ \
+    && cp target/release/agenticlaw-gateway-bin /usr/local/bin/ \
+    && cp target/release/protectgateway /usr/local/bin/ 2>/dev/null || true
+
+# ── Stage 2: Build protectgateway ──
+FROM rust:latest AS pg-builder
+
+WORKDIR /src/protectgateway
+COPY protectgateway_public/Cargo.toml protectgateway_public/Cargo.lock ./
+COPY protectgateway_public/src/ src/
+COPY protectgateway_public/tools/ tools/
+
+RUN cargo build --release --bin protectgateway \
+    && cp target/release/protectgateway /usr/local/bin/
+
+# ── Stage 3: Runtime ──
+FROM debian:trixie-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates wget curl jq sudo tmux git openssh-client openssh-server gosu python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && ssh-keygen -A
+
+RUN groupadd -g 1000 purpose \
+    && useradd -u 1000 -g purpose -G sudo -d /home/purpose -s /bin/bash -m purpose \
+    && echo "purpose ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/purpose
+
+COPY --from=builder /usr/local/bin/agenticlaw /usr/local/bin/agenticlaw
+COPY --from=builder /usr/local/bin/agenticlaw-consciousness /usr/local/bin/agenticlaw-consciousness
+COPY --from=pg-builder /usr/local/bin/protectgateway /usr/local/bin/protectgateway
+
+COPY agenticlaw/operator/policies/OPERATOR.json /etc/agenticlaw/policy.json
+COPY agenticlaw/operator/pg-config.yaml /etc/agenticlaw/pg-config.yaml
+COPY agenticlaw/consciousness/souls/ /etc/agenticlaw/souls/
+
+RUN mkdir -p /etc/agenticlaw/sub-policies /var/log/agenticlaw \
+    && chown -R purpose:purpose /home/purpose /var/log/agenticlaw
+
+COPY agenticlaw/operator/entrypoint-purpose.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV ROLE=OPERATOR \
+    RUSTCLAW_PORT=18790 \
+    PROTECT_PORT=18789 \
+    RUST_LOG=info
+
+EXPOSE 18789 22
+
+LABEL org.opencontainers.image.title="purpose" \
+      org.opencontainers.image.description="Purpose — AgentiClaw consciousness container" \
+      com.agentiagency.role="OPERATOR" \
+      com.agentiagency.molt="purpose"
+
+WORKDIR /home/purpose
+ENTRYPOINT ["/entrypoint.sh"]

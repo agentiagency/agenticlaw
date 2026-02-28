@@ -22,9 +22,6 @@ axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
-http = "1.0"
-url = "2.5"
 futures = "0.3"
 
 # Serialization
@@ -73,6 +70,9 @@ pin-project-lite = "0.2"
 # Cancellation
 tokio-util = { version = "0.7", features = ["rt"] }
 
+# WebSocket client
+tokio-tungstenite = "0.21"
+
 [profile.release]
 strip = true
 lto = true
@@ -85,11 +85,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+agenticlaw-core = { path = "crates/agenticlaw-core" }
+agenticlaw-gateway = { path = "crates/agenticlaw-gateway" }
+agenticlaw-consciousness = { path = "crates/agenticlaw-consciousness" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
 
 [[bin]]
 name = "agenticlaw-fmt"
@@ -98,3 +106,7 @@ path = "src/main.rs"
 [[bin]]
 name = "agenticlaw-supervisor"
 path = "src/bin/supervisor.rs"
+
+[[bin]]
+name = "agenticlaw"
+path = "src/bin/agenticlaw.rs"

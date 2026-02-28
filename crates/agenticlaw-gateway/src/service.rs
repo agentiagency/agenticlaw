@@ -13,7 +13,6 @@ fn service_file_path() -> PathBuf {
 }
 
 fn agenticlaw_binary_path() -> String {
-    // Prefer ~/agentibin/agenticlaw, fall back to current exe
     let home = std::env::var("HOME").unwrap_or_default();
     let agentibin = format!("{}/agentibin/agenticlaw", home);
     if std::path::Path::new(&agentibin).exists() {
@@ -57,7 +56,6 @@ pub fn install(port: u16) -> anyhow::Result<()> {
     std::fs::write(&path, &unit)?;
     println!("✓ Wrote service file: {}", path.display());
 
-    // Reload systemd
     let status = Command::new("systemctl")
         .args(["--user", "daemon-reload"])
         .status()?;
@@ -66,7 +64,6 @@ pub fn install(port: u16) -> anyhow::Result<()> {
     }
     println!("✓ Reloaded systemd");
 
-    // Enable
     let status = Command::new("systemctl")
         .args(["--user", "enable", SERVICE_NAME])
         .status()?;
@@ -75,7 +72,6 @@ pub fn install(port: u16) -> anyhow::Result<()> {
     }
     println!("✓ Enabled {}", SERVICE_NAME);
 
-    // Start
     let status = Command::new("systemctl")
         .args(["--user", "start", SERVICE_NAME])
         .status()?;
@@ -85,10 +81,7 @@ pub fn install(port: u16) -> anyhow::Result<()> {
         println!("✓ Started {}", SERVICE_NAME);
     }
 
-    println!(
-        "\nagenticlaw service installed and running on port {}",
-        port
-    );
+    println!("\nagenticlaw service installed and running on port {}", port);
     println!("  Check status: agenticlaw status");
     println!("  View logs:    journalctl --user -u {} -f", SERVICE_NAME);
     println!("  Chat:         agenticlaw chat --session myproject");
@@ -96,29 +89,19 @@ pub fn install(port: u16) -> anyhow::Result<()> {
 }
 
 pub fn uninstall() -> anyhow::Result<()> {
-    // Stop
-    let _ = Command::new("systemctl")
-        .args(["--user", "stop", SERVICE_NAME])
-        .status();
+    let _ = Command::new("systemctl").args(["--user", "stop", SERVICE_NAME]).status();
     println!("✓ Stopped {}", SERVICE_NAME);
 
-    // Disable
-    let _ = Command::new("systemctl")
-        .args(["--user", "disable", SERVICE_NAME])
-        .status();
+    let _ = Command::new("systemctl").args(["--user", "disable", SERVICE_NAME]).status();
     println!("✓ Disabled {}", SERVICE_NAME);
 
-    // Remove file
     let path = service_file_path();
     if path.exists() {
         std::fs::remove_file(&path)?;
         println!("✓ Removed {}", path.display());
     }
 
-    // Reload
-    let _ = Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .status();
+    let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).status();
     println!("✓ Reloaded systemd");
 
     println!("\nagenticlaw service uninstalled.");
@@ -137,7 +120,6 @@ pub fn restart() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check if the service is running by hitting /health
 pub async fn check_health(port: u16) -> anyhow::Result<serde_json::Value> {
     let url = format!("http://127.0.0.1:{}/health", port);
     let resp = reqwest::get(&url).await?;
