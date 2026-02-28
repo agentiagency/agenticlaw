@@ -1,6 +1,7 @@
 //! LLM types for requests and streaming responses
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 /// LLM request
 #[derive(Clone, Debug, Serialize)]
@@ -174,6 +175,10 @@ pub fn validate_and_heal_messages(messages: &[LlmMessage]) -> Vec<LlmMessage> {
                     .collect();
 
                 if !missing.is_empty() {
+                    warn!(
+                        orphaned_tool_ids = ?missing,
+                        "Healing orphaned tool_use blocks — injecting cancelled tool_results"
+                    );
                     if let Some(next_msg) = next {
                         if next_msg.role == "user" {
                             // Append missing tool_results to the existing user message
@@ -242,6 +247,7 @@ fn extract_tool_use_ids(content: &LlmContent) -> Vec<String> {
 fn dedup_tool_results(msg: &LlmMessage) -> LlmMessage {
     match &msg.content {
         LlmContent::Blocks(blocks) => {
+            let original_count = blocks.len();
             let mut seen_ids = std::collections::HashSet::new();
             let deduped: Vec<ContentBlock> = blocks
                 .iter()
@@ -254,6 +260,10 @@ fn dedup_tool_results(msg: &LlmMessage) -> LlmMessage {
                 })
                 .cloned()
                 .collect();
+            let removed = original_count - deduped.len();
+            if removed > 0 {
+                debug!(removed, "Deduplicated tool_result blocks");
+            }
             LlmMessage {
                 role: msg.role.clone(),
                 content: LlmContent::Blocks(deduped),
