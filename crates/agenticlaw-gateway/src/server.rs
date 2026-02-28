@@ -102,6 +102,9 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         .route("/", get(index_handler))
         .route("/ws", get(ws_handler))
         .route("/health", get(health_handler))
+        .route("/status", get(status_handler))
+        .route("/version", get(version_handler))
+        .route("/bee", get(bee_handler))
         .route("/surface", get(surface_handler))
         .route("/plan", post(plan_handler))
         .route("/test", post(test_handler))
@@ -144,6 +147,48 @@ async fn health_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse 
         "consciousness": state.consciousness_enabled,
         "uptime_secs": state.started_at.elapsed().as_secs(),
     }))
+}
+
+/// GET /status — session/runtime status (sacred endpoint)
+async fn status_handler(State(state): State<Arc<WsState>>) -> impl IntoResponse {
+    let sessions: Vec<String> = state
+        .agent
+        .sessions()
+        .list()
+        .into_iter()
+        .map(|k| k.as_str().to_string())
+        .collect();
+    Json(serde_json::json!({
+        "status": "running",
+        "version": env!("CARGO_PKG_VERSION"),
+        "model": state.agent.config().default_model,
+        "layer": state.layer,
+        "sessions": sessions,
+        "session_count": sessions.len(),
+        "tools": state.agent.tool_definitions().len(),
+        "consciousness": state.consciousness_enabled,
+        "uptime_secs": state.started_at.elapsed().as_secs(),
+        "port": state.port,
+    }))
+}
+
+/// GET /version — version info (sacred endpoint)
+async fn version_handler() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "name": "agenticlaw",
+        "version": env!("CARGO_PKG_VERSION"),
+        "build": option_env!("AGENTICLAW_BUILD_SHA").unwrap_or("dev"),
+    }))
+}
+
+/// GET /bee — agentisoft.toml manifest (sacred endpoint)
+async fn bee_handler() -> impl IntoResponse {
+    // Embed the bee manifest at compile time
+    const MANIFEST: &str = include_str!("../../../bee/agentisoft.toml");
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/toml")],
+        MANIFEST,
+    )
 }
 
 /// GET /surface — consciousness surface state (bee protocol: sacred endpoint)
