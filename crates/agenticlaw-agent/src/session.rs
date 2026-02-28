@@ -87,8 +87,12 @@ impl SessionRegistry {
     }
 
     /// Resume a session from an existing .ctx file.
-    pub fn resume_from_ctx(&self, resumed: &ctx_file::ResumedSession) -> Arc<Session> {
-        let key = SessionKey::new(&resumed.session_id);
+    pub fn resume_from_ctx(
+        &self,
+        resumed: &ctx_file::ResumedSession,
+        key_override: Option<&str>,
+    ) -> Arc<Session> {
+        let key = SessionKey::new(key_override.unwrap_or(&resumed.session_id));
         self.sessions
             .entry(key.clone())
             .or_insert_with(|| {

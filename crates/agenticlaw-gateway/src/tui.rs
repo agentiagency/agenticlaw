@@ -676,7 +676,7 @@ pub async fn run_tui(
         if let Some(latest) = agenticlaw_agent::ctx_file::find_by_id(&workspace_root, name) {
             // Resume from the latest .ctx for this session
             let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&latest)?;
-            runtime.sessions().resume_from_ctx(&resumed);
+            runtime.sessions().resume_from_ctx(&resumed, Some(name));
             tracing::info!("Resumed session '{}' from {}", name, latest.display());
             (key, latest)
         } else {
@@ -696,7 +696,7 @@ pub async fn run_tui(
         let resumed = agenticlaw_agent::ctx_file::parse_for_resume(&ctx)?;
         let key = SessionKey::new(&resumed.session_id);
         let path = resumed.ctx_path.clone();
-        runtime.sessions().resume_from_ctx(&resumed);
+        runtime.sessions().resume_from_ctx(&resumed, None);
         (key, path)
     } else {
         // No session name, no resume: fresh anonymous session
