@@ -113,17 +113,17 @@ impl App {
         }
     }
 
-    fn editor_text(&self) -> String {
+    pub fn editor_text(&self) -> String {
         self.editor_lines.join("\n")
     }
 
-    fn clear_editor(&mut self) {
+    pub fn clear_editor(&mut self) {
         self.editor_lines = vec![String::new()];
         self.cursor_row = 0;
         self.cursor_col = 0;
     }
 
-    fn push_output(&mut self, text: &str) {
+    pub fn push_output(&mut self, text: &str) {
         // Append text, handling newlines
         for ch in text.chars() {
             if ch == '\n' {
@@ -140,16 +140,16 @@ impl App {
     }
 
     /// Number of characters in the current editor line.
-    fn current_line_char_len(&self) -> usize {
+    pub fn current_line_char_len(&self) -> usize {
         self.editor_lines[self.cursor_row].chars().count()
     }
 
     /// Convert a char-based cursor_col to a byte offset in the current line.
-    fn cursor_byte_offset(&self) -> usize {
+    pub fn cursor_byte_offset(&self) -> usize {
         char_to_byte(&self.editor_lines[self.cursor_row], self.cursor_col)
     }
 
-    fn clamp_cursor(&mut self) {
+    pub fn clamp_cursor(&mut self) {
         if self.cursor_row >= self.editor_lines.len() {
             self.cursor_row = self.editor_lines.len().saturating_sub(1);
         }
@@ -417,6 +417,11 @@ fn handle_insert_key(app: &mut App, key: KeyEvent) -> Option<String> {
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
+
+/// Public entry point for rendering — used by tui_client.
+pub fn draw_pub(frame: &mut Frame, app: &App) {
+    draw(frame, app);
+}
 
 fn draw(frame: &mut Frame, app: &App) {
     let size = frame.area();
