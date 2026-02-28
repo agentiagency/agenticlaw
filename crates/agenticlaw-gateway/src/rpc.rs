@@ -34,6 +34,7 @@ pub async fn route_rpc(method: &str, params: Value, ctx: &ConnectionContext) -> 
         "sessions.list" => handle_sessions_list(ctx).await,
         "sessions.usage" => handle_sessions_usage(params, ctx).await,
         "sessions.delete" => handle_sessions_delete(params, ctx).await,
+        "ctx.read" => handle_ctx_read(params, ctx).await,
         "health" => handle_health(ctx).await,
         "tools.list" => handle_tools_list(ctx).await,
         "echo" => Ok(params),
@@ -91,6 +92,8 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
         // Forward AgentEvents to OutputEvents on the broadcast channel
         let fwd_output_tx = output_tx.clone();
         let fwd_session = session_clone.clone();
+        let fwd_agent = agent.clone();
+        let fwd_sk = sk.clone();
         let forward_task = tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
                 let output = match event {
@@ -133,9 +136,21 @@ async fn handle_chat_send(params: Value, ctx: &ConnectionContext) -> RpcResult {
                         session: fwd_session.clone(),
                         token_count,
                     },
-                    AgentEvent::Done { .. } => OutputEvent::Done {
-                        session: fwd_session.clone(),
-                    },
+                    AgentEvent::Done { .. } => {
+                        let _ = fwd_output_tx.send(OutputEvent::Done {
+                            session: fwd_session.clone(),
+                        });
+                        // Emit .ctx update after turn completes
+                        if let Some(sess) = fwd_agent.sessions().get(&fwd_sk) {
+                            if let Some(content) = sess.read_ctx() {
+                                let _ = fwd_output_tx.send(OutputEvent::CtxUpdate {
+                                    session: fwd_session.clone(),
+                                    content,
+                                });
+                            }
+                        }
+                        continue;
+                    }
                     AgentEvent::Error(e) => OutputEvent::Error {
                         session: fwd_session.clone(),
                         message: e,
@@ -292,6 +307,38 @@ async fn handle_sessions_delete(params: Value, ctx: &ConnectionContext) -> RpcRe
 // health — health check
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ctx.read — return full .ctx file contents for a session
+// ---------------------------------------------------------------------------
+
+async fn handle_ctx_read(params: Value, ctx: &ConnectionContext) -> RpcResult {
+    let session = params["session"]
+        .as_str()
+        .ok_or_else(|| (-32602, "Missing required param: session".to_string()))?;
+
+    let session_key = SessionKey::new(session);
+    let sess = ctx
+        .agent
+        .sessions()
+        .get(&session_key)
+        .ok_or_else(|| (-32002, format!("Session not found: {}", session)))?;
+
+    match sess.read_ctx() {
+        Some(content) => Ok(serde_json::json!({
+            "session": session,
+            "content": content,
+        })),
+        None => Ok(serde_json::json!({
+            "session": session,
+            "content": null,
+        })),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// health — gateway health check
+// ---------------------------------------------------------------------------
+
 async fn handle_health(ctx: &ConnectionContext) -> RpcResult {
     Ok(serde_json::json!({
         "status": "healthy",
@@ -357,6 +404,11 @@ pub fn output_event_to_message(event: &OutputEvent) -> EventMessage {
             session,
             "sleep",
             serde_json::json!({ "token_count": token_count }),
+        ),
+        OutputEvent::CtxUpdate { session, content } => EventMessage::chat(
+            session,
+            "ctx_update",
+            serde_json::json!({ "content": content }),
         ),
     }
 }
