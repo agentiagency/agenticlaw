@@ -1,0 +1,6 @@
+--- session: frontier ---
+started: 2026-02-17T06:00:00Z
+
+--- 2026-02-17T06:00:00Z ---
+Metacognition integration: tiered context loading (tier1=constitution every turn, tier2=project context, tier3=session preamble), decision algorithm injection, workspace STATE.md, tool prompt wiring. Plan drafted not approved. The user indicated "not exactly" — likely wants a different approach to metacognition than the tiered file system proposed. Need to discuss before implementing.
+

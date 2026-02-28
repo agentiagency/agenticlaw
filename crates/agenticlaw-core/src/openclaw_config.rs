@@ -136,7 +136,10 @@ impl OpenclawConfig {
 
     /// Workspace from config, or ~/.openclaw/workspace
     pub fn workspace(&self) -> PathBuf {
-        self.agents.defaults.workspace.as_ref()
+        self.agents
+            .defaults
+            .workspace
+            .as_ref()
             .map(|w| expand_tilde(w))
             .unwrap_or_else(|| {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
@@ -146,18 +149,32 @@ impl OpenclawConfig {
 
     /// Primary model ID, stripping provider/ prefix.
     pub fn default_model(&self) -> Option<String> {
-        self.agents.defaults.model.primary.as_ref().map(|m| {
-            m.split('/').last().unwrap_or(m).to_string()
-        })
+        self.agents
+            .defaults
+            .model
+            .primary
+            .as_ref()
+            .map(|m| m.split('/').next_back().unwrap_or(m).to_string())
     }
 
-    pub fn gateway_port(&self) -> Option<u16> { self.gateway.port }
-    pub fn gateway_bind(&self) -> Option<&str> { self.gateway.bind.as_deref() }
-    pub fn gateway_token(&self) -> Option<&str> { self.gateway.auth.token.as_deref() }
-    pub fn gateway_auth_mode(&self) -> Option<&str> { self.gateway.auth.mode.as_deref() }
+    pub fn gateway_port(&self) -> Option<u16> {
+        self.gateway.port
+    }
+    pub fn gateway_bind(&self) -> Option<&str> {
+        self.gateway.bind.as_deref()
+    }
+    pub fn gateway_token(&self) -> Option<&str> {
+        self.gateway.auth.token.as_deref()
+    }
+    pub fn gateway_auth_mode(&self) -> Option<&str> {
+        self.gateway.auth.mode.as_deref()
+    }
 
     pub fn anthropic_base_url(&self) -> Option<&str> {
-        self.models.providers.anthropic.as_ref()
+        self.models
+            .providers
+            .anthropic
+            .as_ref()
             .and_then(|p| p.base_url.as_deref())
     }
 
@@ -182,7 +199,10 @@ pub fn load_bootstrap_files(workspace: &Path) -> Vec<(String, String)> {
     let home = std::env::var("HOME").ok().map(PathBuf::from);
     let mut dir = workspace.parent();
     while let Some(parent) = dir {
-        if home.as_ref().is_some_and(|h| parent == h.parent().unwrap_or(h)) {
+        if home
+            .as_ref()
+            .is_some_and(|h| parent == h.parent().unwrap_or(h))
+        {
             break;
         }
         let path = parent.join("AGENTS.md");

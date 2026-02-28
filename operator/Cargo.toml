@@ -1,0 +1,48 @@
+[workspace]
+
+[package]
+name = "agenticlaw-operator"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "operator"
+path = "src/main.rs"
+
+[[bin]]
+name = "protectgateway"
+path = "src/proxy_main.rs"
+
+[[bin]]
+name = "mock-policy-server"
+path = "src/mock_server.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
+async-stream = "0.3"
+futures-util = "0.3"
+glob = "0.3"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "http1"] }
+http-body-util = "0.1"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+
+[dev-dependencies]
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"
+codegen-units = 1

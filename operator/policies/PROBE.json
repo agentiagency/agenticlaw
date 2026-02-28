@@ -1,0 +1,46 @@
+{
+  "role": "PROBE",
+  "tools": {
+    "allow": ["read", "glob", "grep", "write", "edit", "bash"],
+    "deny": [],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": ["*"],
+    "deny": [
+      "sudo:*", "su:*",
+      "mount:*", "umount:*", "chroot:*",
+      "docker:*", "kubectl:*", "terraform:*",
+      "reboot", "shutdown:*", "halt", "poweroff", "init:*",
+      "systemctl:*", "service:*",
+      "fdisk:*", "mkfs:*", "mkfs.*:*", "parted:*",
+      "iptables:*", "ip route:*",
+      "insmod:*", "modprobe:*", "rmmod:*"
+    ],
+    "ask": []
+  },
+  "filesystem": {
+    "allow": [
+      "read:/workspace", "read:/workspace/**",
+      "read:/usr/**",
+      "read:/etc/**",
+      "write:/workspace", "write:/workspace/**",
+      "write:/tmp/**"
+    ],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/**",
+      "write:/etc/**",
+      "write:/boot/**",
+      "write:/sys/**",
+      "write:/proc/**",
+      "read:/proc/*/mem"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": ["connect:**", "dns:**"],
+    "deny": ["listen:**"],
+    "ask": []
+  }
+}

@@ -1,0 +1,136 @@
+# Rustclaw Operator — all 7 agent containers + mock policy server
+#
+# Usage:
+#   docker compose up -d          # Start all containers
+#   docker compose up read        # Start only READ container
+#   docker compose logs -f read   # Follow READ logs
+#   docker compose down           # Stop all
+
+services:
+  policy-server:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      target: builder
+    command: ["/usr/local/bin/mock-policy-server"]
+    ports:
+      - "8080:8080"
+    networks:
+      - policy-net
+
+  read:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: READ }
+    ports: ["18701:18789"]
+    environment: &common-env
+      - ANTHROPIC_API_KEY
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /etc/agenticlaw/sub-policies:rw,noexec,nosuid,size=1m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges]
+    network_mode: none
+    mem_limit: 512m
+    pids_limit: 128
+
+  write:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: WRITE }
+    ports: ["18702:18789"]
+    environment: *common-env
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges]
+    network_mode: none
+    mem_limit: 512m
+    pids_limit: 128
+
+  local:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: LOCAL }
+    ports: ["18703:18789"]
+    environment: *common-env
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
+    security_opt: [no-new-privileges]
+    network_mode: none
+    mem_limit: 512m
+    pids_limit: 256
+
+  poke:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: POKE }
+    ports: ["18704:18789"]
+    environment:
+      - ANTHROPIC_API_KEY
+      - SUB_POLICIES_URL=http://policy-server:8080/policies/POKE
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
+    security_opt: [no-new-privileges]
+    networks: [policy-net]
+    depends_on: [policy-server]
+    mem_limit: 512m
+    pids_limit: 256
+
+  probe:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: PROBE }
+    ports: ["18705:18789"]
+    environment:
+      - ANTHROPIC_API_KEY
+      - SUB_POLICIES_URL=http://policy-server:8080/policies/PROBE
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, NET_RAW]
+    security_opt: [no-new-privileges]
+    networks: [policy-net]
+    depends_on: [policy-server]
+    mem_limit: 1g
+    pids_limit: 256
+
+  agent:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: AGENT }
+    ports: ["18706:18789"]
+    environment:
+      - ANTHROPIC_API_KEY
+      - SUB_POLICIES_URL=http://policy-server:8080/policies/AGENT
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, NET_BIND_SERVICE, NET_RAW]
+    security_opt: [no-new-privileges]
+    networks: [policy-net]
+    depends_on: [policy-server]
+    mem_limit: 2g
+    pids_limit: 512
+
+  operator:
+    build:
+      context: ..
+      dockerfile: operator/Dockerfile
+      args: { ROLE: OPERATOR }
+    ports: ["18707:18789"]
+    environment:
+      - ANTHROPIC_API_KEY
+      - SUB_POLICIES_URL=http://policy-server:8080/policies/OPERATOR
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, NET_BIND_SERVICE, NET_RAW, SYS_PTRACE]
+    security_opt: [no-new-privileges]
+    networks: [policy-net]
+    depends_on: [policy-server]
+    mem_limit: 4g
+    pids_limit: 1024
+
+networks:
+  policy-net:
+    driver: bridge

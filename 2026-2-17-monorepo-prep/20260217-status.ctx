@@ -1,0 +1,86 @@
+--- session: ws2-3-agency-status ---
+started: 2026-02-17T06:00:00Z
+cwd: /home/devkit/worktrees/ws2-3-agency/rustclaw
+
+--- 2026-02-17T06:00:00Z ---
+# Rustclaw Status Report — 2026-02-17
+
+## What Was Built This Session
+
+Rustclaw went from a .jsonl format viewer to a complete Rust agent runtime in one session.
+
+### Commits (chronological)
+- 833ac66 feat: clean context format — emit, parse, round-trip, Session trait
+- 0f8f5a3 feat: .ctx as native agent context format with wire transform
+- d736f90 feat: workspace with agent runtime from openclaw-rs + 205 tests
+- c3c1799 feat: connect .ctx persistence, SOUL.md loading, chat CLI, web portal
+- 074c445 feat: vim TUI with ESC cancel, context bar, model display
+- af90b41 feat: modular tool architecture with glob and grep
+- 7717e9a feat: -r/--resume resumes latest .ctx session
+- fc4a2b6 feat: bare `rustclaw` launches chat, no subcommand needed
+- c61805c feat: rustclaw is the binary name, default model is claude-opus-4-6
+- + several fix commits (scroll, warnings, ring dep, exit message)
+
+### Architecture
+```
+rustclaw/
+├── Cargo.toml              (workspace root + rustclaw-fmt binary)
+├── src/                    (.ctx format viewer, jsonl parser, supervisor)
+└── crates/
+    ├── rustclaw-core/      (types, protocol, errors)
+    ├── rustclaw-llm/       (Anthropic SSE streaming, LlmProvider trait)
+    ├── rustclaw-tools/     (modular: bash, read, write, edit, glob, grep)
+    │   └── src/tools/      (one file per tool, add/remove by editing mod.rs)
+    ├── rustclaw-agent/     (AgentRuntime, Session with .ctx persistence, ctx_file module)
+    └── rustclaw-gateway/   (axum WebSocket server, vim TUI, CLI entry point)
+```
+
+### What Works
+- `rustclaw` — launches vim-mode TUI, chats with Claude Opus 4.6 (1M)
+- `rustclaw -r` — resumes latest .ctx session
+- `rustclaw gateway --no-auth` — web portal with live .ctx viewing at /ctx/{session}
+- Auto-discovers SOUL.md/AGENTS.md from workspace
+- Every turn persists to datetime-prefixed .ctx files
+- 6 modular tools: bash, read, write, edit, glob, grep
+- ESC cancels running agent operations
+- Status bar: vim mode, model name, session ID, context usage bar
+- 211+ tests including real Anthropic API integration tests
+- Zero compiler warnings
+
+### .ctx Format
+Source of truth for agent sessions. Plain text, human-readable:
+- `<up>` tags = input to model (user messages + tool results)
+- Bare text = model output
+- `--- <timestamp> ---` separators
+- Datetime-prefixed filenames: 20260217-005405-4207bef5.ctx
+
+## What-Is
+Rustclaw is a complete Rust agent runtime. Type `rustclaw` and get a vim-mode TUI chatting with Opus 4.6. Auto-loads context files, persists .ctx, has 6 tools, streams responses, ESC cancels, -r resumes.
+
+## Frontier (In Progress)
+Metacognition integration was being planned when session paused. The gaps:
+1. Context discovery too narrow — only SOUL.md/AGENTS.md, needs tiered loading (META_COGNITION.md, CLAUDE.md, VISION.md, EGO.md, PURPOSE.md)
+2. Decision algorithm not injected into system prompt
+3. No workspace STATE.md persistence across sessions
+4. Tool prompts exist but aren't wired into system prompt
+5. .ctx is parallel record — not yet the wire source (still builds jsonl from Vec<LlmMessage> in memory)
+
+Plan was drafted at /home/devkit/.claude/plans/witty-stargazing-hinton.md but not yet approved.
+
+## Repository
+- Remote: https://github.com/thomcom/agentiagency.git
+- Branch: ws2-3-agency
+- All work committed, clean tree.
+
+## Key Files
+- rustclaw/crates/rustclaw-agent/src/ctx_file.rs — .ctx file operations
+- rustclaw/crates/rustclaw-agent/src/runtime.rs — the agentic loop
+- rustclaw/crates/rustclaw-agent/src/session.rs — session with .ctx persistence
+- rustclaw/crates/rustclaw-tools/src/tools/ — one file per tool
+- rustclaw/crates/rustclaw-gateway/src/tui.rs — vim TUI
+- rustclaw/crates/rustclaw-gateway/src/server.rs — web portal + /ctx endpoint
+
+## Dependencies
+- Anthropic API key via ~/.keys.sh
+- openclaw-rs runtime recovered from ~/agentiagency/molt/purpose-feb-7/openclaw-rs/
+

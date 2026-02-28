@@ -81,7 +81,10 @@ pub fn install(port: u16) -> anyhow::Result<()> {
         println!("✓ Started {}", SERVICE_NAME);
     }
 
-    println!("\nagenticlaw service installed and running on port {}", port);
+    println!(
+        "\nagenticlaw service installed and running on port {}",
+        port
+    );
     println!("  Check status: agenticlaw status");
     println!("  View logs:    journalctl --user -u {} -f", SERVICE_NAME);
     println!("  Chat:         agenticlaw chat --session myproject");
@@ -89,10 +92,14 @@ pub fn install(port: u16) -> anyhow::Result<()> {
 }
 
 pub fn uninstall() -> anyhow::Result<()> {
-    let _ = Command::new("systemctl").args(["--user", "stop", SERVICE_NAME]).status();
+    let _ = Command::new("systemctl")
+        .args(["--user", "stop", SERVICE_NAME])
+        .status();
     println!("✓ Stopped {}", SERVICE_NAME);
 
-    let _ = Command::new("systemctl").args(["--user", "disable", SERVICE_NAME]).status();
+    let _ = Command::new("systemctl")
+        .args(["--user", "disable", SERVICE_NAME])
+        .status();
     println!("✓ Disabled {}", SERVICE_NAME);
 
     let path = service_file_path();
@@ -101,7 +108,9 @@ pub fn uninstall() -> anyhow::Result<()> {
         println!("✓ Removed {}", path.display());
     }
 
-    let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).status();
+    let _ = Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .status();
     println!("✓ Reloaded systemd");
 
     println!("\nagenticlaw service uninstalled.");

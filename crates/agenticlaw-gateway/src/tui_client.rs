@@ -37,18 +37,18 @@ pub async fn run_tui_client(
         if v.get("event").and_then(|e| e.as_str()) == Some("info") {
             if let Some(Ok(WsMsg::Text(auth_text))) = ws_rx.next().await {
                 let auth: serde_json::Value = serde_json::from_str(&auth_text).unwrap_or_default();
-                if auth.get("event").and_then(|e| e.as_str()) == Some("auth") {
-                    if auth["data"]["ok"].as_bool() != Some(true) {
-                        let err = auth["data"]["error"].as_str().unwrap_or("unknown");
-                        anyhow::bail!("Authentication failed: {}", err);
-                    }
+                if auth.get("event").and_then(|e| e.as_str()) == Some("auth")
+                    && auth["data"]["ok"].as_bool() != Some(true)
+                {
+                    let err = auth["data"]["error"].as_str().unwrap_or("unknown");
+                    anyhow::bail!("Authentication failed: {}", err);
                 }
             }
-        } else if v.get("event").and_then(|e| e.as_str()) == Some("auth") {
-            if v["data"]["ok"].as_bool() != Some(true) {
-                let err = v["data"]["error"].as_str().unwrap_or("unknown");
-                anyhow::bail!("Authentication failed: {}", err);
-            }
+        } else if v.get("event").and_then(|e| e.as_str()) == Some("auth")
+            && v["data"]["ok"].as_bool() != Some(true)
+        {
+            let err = v["data"]["error"].as_str().unwrap_or("unknown");
+            anyhow::bail!("Authentication failed: {}", err);
         }
     }
 
@@ -173,7 +173,10 @@ fn handle_ws_event(app: &mut App, text: &str) {
                     let content = data["content"].as_str().unwrap_or("");
                     let is_error = data["is_error"].as_bool().unwrap_or(false);
                     if is_error {
-                        app.push_output(&format!("  error: {}\n", &content[..content.len().min(200)]));
+                        app.push_output(&format!(
+                            "  error: {}\n",
+                            &content[..content.len().min(200)]
+                        ));
                     } else {
                         app.push_output(&format!("  done ({} chars)\n", content.len()));
                     }

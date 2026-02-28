@@ -1,0 +1,48 @@
+{
+  "role": "AGENT",
+  "tools": {
+    "allow": ["read", "glob", "grep", "write", "edit", "bash"],
+    "deny": [],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": ["*"],
+    "deny": [
+      "fdisk:*", "mkfs:*", "mkfs.*:*", "parted:*",
+      "systemctl:*", "service:*",
+      "reboot", "shutdown:*", "halt", "poweroff", "init:*",
+      "insmod:*", "modprobe:*", "rmmod:*",
+      "mount:*", "umount:*", "chroot:*"
+    ],
+    "ask": [
+      "sudo:*", "su:*",
+      "docker:*", "kubectl:*", "terraform:*",
+      "rm -rf:*", "rm -r /:*",
+      "kill -9:*", "killall:*",
+      "git push:*", "git push --force:*"
+    ]
+  },
+  "filesystem": {
+    "allow": [
+      "read:**",
+      "write:/workspace/**",
+      "write:/tmp/**"
+    ],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/**",
+      "write:/etc/agenticlaw/**",
+      "write:/boot/**",
+      "write:/sys/**",
+      "write:/proc/sys/**",
+      "read:/proc/*/mem",
+      "read:/proc/kcore"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": ["connect:**", "dns:**", "listen:>1024"],
+    "deny": ["listen:<1024"],
+    "ask": []
+  }
+}

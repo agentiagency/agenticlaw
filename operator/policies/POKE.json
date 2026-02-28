@@ -1,0 +1,56 @@
+{
+  "role": "POKE",
+  "tools": {
+    "allow": ["read", "glob", "grep", "write", "edit", "bash"],
+    "deny": [],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": [
+      "*",
+      "curl -s:*", "curl --silent:*",
+      "wget -q:*", "wget --quiet:*"
+    ],
+    "deny": [
+      "curl -X POST:*", "curl -X PUT:*", "curl -X DELETE:*", "curl -X PATCH:*",
+      "curl --data:*", "curl -d:*", "curl --upload-file:*", "curl -T:*",
+      "wget --post-data*:*", "wget --post-file*:*",
+      "nc:*", "netcat:*", "ncat:*",
+      "ssh:*", "scp:*", "sftp:*", "rsync:*",
+      "telnet:*", "ftp:*",
+      "sudo:*", "su:*",
+      "mount:*", "umount:*",
+      "docker:*", "kubectl:*", "terraform:*",
+      "reboot", "shutdown:*", "halt", "poweroff", "init:*",
+      "systemctl:*", "service:*",
+      "fdisk:*", "mkfs:*", "mkfs.*:*", "parted:*",
+      "iptables:*", "ip:*", "route:*",
+      "insmod:*", "modprobe:*", "rmmod:*"
+    ],
+    "ask": []
+  },
+  "filesystem": {
+    "allow": [
+      "read:/workspace", "read:/workspace/**",
+      "read:/usr/**",
+      "read:/etc/**",
+      "write:/workspace", "write:/workspace/**",
+      "write:/tmp/**"
+    ],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/**",
+      "write:/etc/**",
+      "write:/boot/**",
+      "write:/sys/**",
+      "write:/proc/**",
+      "read:/proc/*/mem"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": ["connect:http:**", "connect:https:**", "dns:**"],
+    "deny": ["connect:raw:**", "listen:**"],
+    "ask": []
+  }
+}

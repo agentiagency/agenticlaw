@@ -89,6 +89,8 @@ pub async fn start_gateway(config: ExtendedConfig) -> anyhow::Result<()> {
         layer: layer.clone(),
         port: config.gateway.port,
         output_tx,
+        consciousness_enabled: false,
+        started_at: std::time::Instant::now(),
     });
 
     let app = Router::new()

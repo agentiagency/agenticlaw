@@ -1,0 +1,51 @@
+{
+  "role": "READ",
+  "tools": {
+    "allow": ["read", "glob", "grep"],
+    "deny": ["bash", "write", "edit"],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": [
+      "ls:*", "cat:*", "head:*", "tail:*", "wc:*", "stat:*",
+      "file:*", "find:*", "tree:*", "du:*", "df:*", "pwd",
+      "echo:*", "date", "whoami", "id", "uname:*"
+    ],
+    "deny": [
+      "rm:*", "mv:*", "cp:*", "chmod:*", "chown:*", "chgrp:*",
+      "mkdir:*", "touch:*", "tee:*", "dd:*", "truncate:*",
+      "curl:*", "wget:*", "nc:*", "ssh:*", "scp:*", "rsync:*",
+      "python:*", "python3:*", "node:*", "perl:*", "ruby:*",
+      "bash:*", "sh:*", "exec:*", "eval:*", "source:*",
+      "sudo:*", "su:*", "mount:*", "umount:*",
+      "docker:*", "kubectl:*", "terraform:*",
+      "kill:*", "killall:*", "pkill:*",
+      "reboot", "shutdown:*", "halt", "poweroff", "init:*",
+      "systemctl:*", "service:*",
+      "fdisk:*", "mkfs:*", "mkfs.*:*", "parted:*",
+      "iptables:*", "ip:*", "route:*",
+      "insmod:*", "modprobe:*", "rmmod:*",
+      "git push:*", "git commit:*", "git reset:*"
+    ],
+    "ask": []
+  },
+  "filesystem": {
+    "allow": ["read:/workspace", "read:/workspace/**"],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/**",
+      "read:/root/**",
+      "read:/home/*/.ssh/**",
+      "read:/proc/*/mem",
+      "read:/proc/kcore",
+      "write:**",
+      "execute:**"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": [],
+    "deny": ["connect:**", "listen:**", "dns:**"],
+    "ask": []
+  }
+}

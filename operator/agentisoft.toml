@@ -1,0 +1,61 @@
+# AgentiSoft package manifest for agenticlaw-operator
+# https://github.com/thomcom/agentiagency/tree/main/agenticlaw/operator
+
+[package]
+name = "agenticlaw-operator"
+version = "0.1.0"
+description = "Build, test, and deploy policy-scoped AI agent containers from agenticlaw source"
+license = "Proprietary"
+tier = "Licensed"
+repository = "https://github.com/thomcom/agentiagency"
+path = "agenticlaw/operator"
+
+[provides]
+capabilities = [
+    "container:build",
+    "container:test",
+    "container:push",
+    "policy:enforce",
+    "policy:read",
+    "policy:write",
+    "policy:local",
+    "policy:poke",
+    "policy:probe",
+    "policy:agent",
+    "policy:operator",
+    "proxy:protectgateway",
+    "mock:llm-provider",
+    "mock:policy-server",
+]
+
+[requires]
+capabilities = [
+    "runtime:docker",
+    "runtime:rust",
+    "credential:anthropic_api_key",
+]
+
+[binaries]
+operator = { path = "src/main.rs", help = true }
+protectgateway = { path = "src/proxy_main.rs", help = true }
+mock-policy-server = { path = "src/mock_server.rs", help = true }
+
+[hooks]
+build = "cargo build --release"
+test = "cargo test && cargo run --bin operator -- test --all"
+install = "cargo install --path . --force"
+
+[docker]
+dockerfile = "Dockerfile"
+context = ".."
+roles = ["READ", "WRITE", "LOCAL", "POKE", "PROBE", "AGENT", "OPERATOR"]
+build_arg = "ROLE"
+image_prefix = "agenticlaw"
+
+[metadata]
+language = "rust"
+edition = "2021"
+min_rust_version = "1.88"
+image_size = "18.5MB"
+test_count = 157
+security_audits = 2

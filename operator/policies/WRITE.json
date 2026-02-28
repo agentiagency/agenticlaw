@@ -1,0 +1,57 @@
+{
+  "role": "WRITE",
+  "tools": {
+    "allow": ["read", "glob", "grep", "write", "edit"],
+    "deny": ["bash"],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": [
+      "ls:*", "cat:*", "head:*", "tail:*", "wc:*", "stat:*",
+      "file:*", "find:*", "tree:*", "du:*", "df:*", "pwd",
+      "echo:*", "date", "whoami", "id", "uname:*",
+      "mkdir:*", "touch:*", "cp:*"
+    ],
+    "deny": [
+      "rm -rf:*", "rm -r /:*", "rm -fr:*",
+      "chmod:*", "chown:*", "chgrp:*",
+      "dd:*", "truncate:*",
+      "curl:*", "wget:*", "nc:*", "ssh:*", "scp:*", "rsync:*",
+      "python:*", "python3:*", "node:*", "perl:*", "ruby:*",
+      "sudo:*", "su:*", "mount:*", "umount:*",
+      "docker:*", "kubectl:*", "terraform:*",
+      "kill:*", "killall:*", "pkill:*",
+      "reboot", "shutdown:*", "halt", "poweroff", "init:*",
+      "systemctl:*", "service:*",
+      "fdisk:*", "mkfs:*", "mkfs.*:*", "parted:*",
+      "iptables:*", "ip:*", "route:*",
+      "insmod:*", "modprobe:*", "rmmod:*"
+    ],
+    "ask": []
+  },
+  "filesystem": {
+    "allow": [
+      "read:/workspace", "read:/workspace/**",
+      "write:/workspace", "write:/workspace/**"
+    ],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/**",
+      "write:/etc/**",
+      "write:/boot/**",
+      "write:/sys/**",
+      "write:/proc/**",
+      "write:/usr/**",
+      "write:/bin/**",
+      "write:/sbin/**",
+      "read:/proc/*/mem",
+      "read:/proc/kcore"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": [],
+    "deny": ["connect:**", "listen:**", "dns:**"],
+    "ask": []
+  }
+}

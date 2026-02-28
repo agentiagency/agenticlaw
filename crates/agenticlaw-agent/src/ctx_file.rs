@@ -82,11 +82,17 @@ pub fn append_assistant_text(path: &Path, timestamp: &str, content: &str) -> std
 /// Append a tool call line to the current assistant block.
 pub fn append_tool_call(path: &Path, name: &str, args_summary: &str) -> std::io::Result<()> {
     let mut f = OpenOptions::new().append(true).open(path)?;
-    write!(f, "[tool:{}] {}\n", name, args_summary)
+    writeln!(f, "[tool:{}] {}", name, args_summary)
 }
 
 /// Append a tool result as <up> (input to the model from outside).
-pub fn append_tool_result(path: &Path, timestamp: &str, name: &str, content: &str, is_error: bool) -> std::io::Result<()> {
+pub fn append_tool_result(
+    path: &Path,
+    timestamp: &str,
+    name: &str,
+    content: &str,
+    is_error: bool,
+) -> std::io::Result<()> {
     let mut f = OpenOptions::new().append(true).open(path)?;
     let prefix = if is_error { "error: " } else { "" };
     // Truncate very long results for .ctx readability
@@ -101,7 +107,14 @@ pub fn append_tool_result(path: &Path, timestamp: &str, name: &str, content: &st
     } else {
         content.to_string()
     };
-    write!(f, "--- {} ---\n<up>\n[tool:{}] {}{}\n</up>\n\n", timestamp, name, prefix, display.trim())
+    write!(
+        f,
+        "--- {} ---\n<up>\n[tool:{}] {}{}\n</up>\n\n",
+        timestamp,
+        name,
+        prefix,
+        display.trim()
+    )
 }
 
 /// Read the entire .ctx file contents.
@@ -117,20 +130,28 @@ pub fn read(path: &Path) -> std::io::Result<String> {
 pub fn discover_preload_files(workspace: &Path) -> Vec<String> {
     use agenticlaw_core::openclaw_config;
     let bootstrap = openclaw_config::load_bootstrap_files(workspace);
-    bootstrap.into_iter().map(|(_name, content)| content).collect()
+    bootstrap
+        .into_iter()
+        .map(|(_name, content)| content)
+        .collect()
 }
 
 /// Generate the .ctx file path for a session within a workspace.
 /// Format: <workspace>/.agenticlaw/sessions/<YYYYMMDD-HHMMSS>-<session_id>.ctx
 pub fn session_ctx_path(workspace: &Path, session_id: &str) -> PathBuf {
     let now = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    workspace.join(".agenticlaw").join("sessions").join(format!("{}-{}.ctx", now, session_id))
+    workspace
+        .join(".agenticlaw")
+        .join("sessions")
+        .join(format!("{}-{}.ctx", now, session_id))
 }
 
 /// Find the latest .ctx file in a workspace's session directory.
 pub fn find_latest(workspace: &Path) -> Option<PathBuf> {
     let sessions_dir = workspace.join(".agenticlaw").join("sessions");
-    if !sessions_dir.is_dir() { return None; }
+    if !sessions_dir.is_dir() {
+        return None;
+    }
 
     let mut ctx_files: Vec<PathBuf> = fs::read_dir(&sessions_dir)
         .ok()?
@@ -160,11 +181,16 @@ pub fn parse_for_resume(path: &Path) -> std::io::Result<ResumedSession> {
         let line = lines[i];
 
         // Session header
-        if let Some(id) = line.strip_prefix("--- session: ").and_then(|s| s.strip_suffix(" ---")) {
+        if let Some(id) = line
+            .strip_prefix("--- session: ")
+            .and_then(|s| s.strip_suffix(" ---"))
+        {
             session_id = id.to_string();
             i += 1;
             // Skip header fields
-            while i < lines.len() && !lines[i].is_empty() { i += 1; }
+            while i < lines.len() && !lines[i].is_empty() {
+                i += 1;
+            }
             i += 1; // blank line
             continue;
         }
@@ -172,18 +198,30 @@ pub fn parse_for_resume(path: &Path) -> std::io::Result<ResumedSession> {
         // Turn separator: --- <timestamp> ---
         if line.starts_with("--- ") && line.ends_with(" ---") {
             i += 1;
-            if i >= lines.len() { break; }
+            if i >= lines.len() {
+                break;
+            }
 
             // Check for <up> tag
             let is_up = lines[i] == "<up>";
-            if is_up { i += 1; }
+            if is_up {
+                i += 1;
+            }
 
             // Collect turn content
             let mut turn_lines = Vec::new();
             while i < lines.len() {
-                if is_up && lines[i] == "</up>" { i += 1; break; }
-                if !is_up && lines[i].starts_with("--- ") && lines[i].ends_with(" ---") { break; }
-                if !is_up && lines[i].is_empty() && (i + 1 >= lines.len() || lines[i + 1].starts_with("--- ")) {
+                if is_up && lines[i] == "</up>" {
+                    i += 1;
+                    break;
+                }
+                if !is_up && lines[i].starts_with("--- ") && lines[i].ends_with(" ---") {
+                    break;
+                }
+                if !is_up
+                    && lines[i].is_empty()
+                    && (i + 1 >= lines.len() || lines[i + 1].starts_with("--- "))
+                {
                     i += 1;
                     break;
                 }
@@ -192,7 +230,9 @@ pub fn parse_for_resume(path: &Path) -> std::io::Result<ResumedSession> {
             }
 
             let text = turn_lines.join("\n");
-            if text.trim().is_empty() { continue; }
+            if text.trim().is_empty() {
+                continue;
+            }
 
             // First non-up turn is the preloaded system context
             if first_turn && !is_up {
@@ -210,7 +250,11 @@ pub fn parse_for_resume(path: &Path) -> std::io::Result<ResumedSession> {
         i += 1;
     }
 
-    let system_prompt = if system_parts.is_empty() { None } else { Some(system_parts.join("\n\n")) };
+    let system_prompt = if system_parts.is_empty() {
+        None
+    } else {
+        Some(system_parts.join("\n\n"))
+    };
 
     Ok(ResumedSession {
         session_id,
@@ -238,7 +282,10 @@ mod tests {
     use std::env::temp_dir;
 
     fn test_path() -> PathBuf {
-        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         temp_dir().join(format!("agenticlaw-ctx-test-{}-{}", std::process::id(), id))
     }
 
@@ -246,10 +293,17 @@ mod tests {
     fn create_and_read() {
         let dir = test_path();
         let path = dir.join("test.ctx");
-        create(&path, "s1", "2026-02-16T12:00:00Z", Some("/workspace"), &[
-            "You are an agent.".into(),
-            "Available tools: read, write".into(),
-        ]).unwrap();
+        create(
+            &path,
+            "s1",
+            "2026-02-16T12:00:00Z",
+            Some("/workspace"),
+            &[
+                "You are an agent.".into(),
+                "Available tools: read, write".into(),
+            ],
+        )
+        .unwrap();
 
         let content = read(&path).unwrap();
         assert!(content.contains("--- session: s1 ---"));
@@ -281,7 +335,14 @@ mod tests {
         let path = dir.join("test.ctx");
         create(&path, "s1", "2026-02-16T12:00:00Z", None, &[]).unwrap();
 
-        append_tool_result(&path, "2026-02-16T12:00:03Z", "read", "file contents here", false).unwrap();
+        append_tool_result(
+            &path,
+            "2026-02-16T12:00:03Z",
+            "read",
+            "file contents here",
+            false,
+        )
+        .unwrap();
 
         let content = read(&path).unwrap();
         assert!(content.contains("<up>"));
@@ -316,15 +377,25 @@ mod tests {
         let dir = test_path();
         let path = dir.join("conv.ctx");
 
-        create(&path, "conv-001", "2026-02-16T12:00:00Z", Some("/workspace"), &[
-            "You are helpful.".into(),
-        ]).unwrap();
+        create(
+            &path,
+            "conv-001",
+            "2026-02-16T12:00:00Z",
+            Some("/workspace"),
+            &["You are helpful.".into()],
+        )
+        .unwrap();
 
         append_user_message(&path, "2026-02-16T12:00:01Z", "Read /tmp/foo.txt").unwrap();
         append_assistant_text(&path, "2026-02-16T12:00:02Z", "Let me read that file.").unwrap();
         append_tool_call(&path, "read", "/tmp/foo.txt").unwrap();
         append_tool_result(&path, "2026-02-16T12:00:03Z", "read", "hello world", false).unwrap();
-        append_assistant_text(&path, "2026-02-16T12:00:04Z", "The file contains: hello world").unwrap();
+        append_assistant_text(
+            &path,
+            "2026-02-16T12:00:04Z",
+            "The file contains: hello world",
+        )
+        .unwrap();
 
         let content = read(&path).unwrap();
 

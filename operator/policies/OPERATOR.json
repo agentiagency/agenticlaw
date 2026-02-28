@@ -1,0 +1,39 @@
+{
+  "role": "OPERATOR",
+  "tools": {
+    "allow": ["read", "glob", "grep", "write", "edit", "bash"],
+    "deny": [],
+    "ask": []
+  },
+  "bash_commands": {
+    "allow": ["*"],
+    "deny": [],
+    "ask": [
+      "rm -rf /*", "rm -rf /", "rm -fr /*", "rm -fr /",
+      "dd if=/dev/zero of=/dev/sd*",
+      "dd if=/dev/zero of=/dev/nvme*",
+      "chmod -R 777 /*", "chmod -R 777 /",
+      "kill -9 1", "kill -KILL 1",
+      ":(){ :|:& };:*"
+    ]
+  },
+  "filesystem": {
+    "allow": [
+      "read:**",
+      "write:**"
+    ],
+    "deny": [
+      "read:/etc/shadow",
+      "read:/etc/agenticlaw/policy.json",
+      "write:/etc/agenticlaw/policy.json",
+      "write:/var/log/agenticlaw/audit.jsonl",
+      "read:/proc/kcore"
+    ],
+    "ask": []
+  },
+  "network": {
+    "allow": ["connect:**", "dns:**", "listen:**"],
+    "deny": [],
+    "ask": []
+  }
+}

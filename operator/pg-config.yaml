@@ -1,0 +1,32 @@
+# ProtectGateway config for agenticlaw operator containers
+# The upstream_url is overridden by UPSTREAM_URL env var at runtime
+listen_addr: "127.0.0.1:18788"
+upstream_url: "https://api.anthropic.com"
+max_chars: 200000
+max_iterations: 10
+enable_executor: false
+
+# Default: no tools, stateless, query-only
+# The entrypoint overrides these per-role via environment or config rewrite
+defaults:
+  tool_tier: T0NoTools
+  memory_tier: M0Stateless
+  cognitive_tier: C0QueryOnly
+
+allowlists:
+  paths:
+    - /workspace
+  commands:
+    - ls
+    - cat
+    - head
+    - tail
+    - wc
+    - stat
+    - file
+    - find
+    - tree
+    - echo
+    - date
+    - whoami
+  network_hosts: []
