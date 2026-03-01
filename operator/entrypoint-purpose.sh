@@ -1,20 +1,11 @@
 #!/bin/bash
 # Purpose consciousness container entrypoint
 #
-# Architecture:
-#   External → protectgateway(:18789) → agenticlaw-consciousness
-#   Consciousness reads ~/.openclaw/openclaw.json for identity
-set -eu
+# Boots with systemd as PID 1. Agenticlaw runs as a systemd user service
+# under the purpose user. SSH runs via systemd. `agenticlaw chat` connects
+# via WebSocket to the running service.
 
-PG_PORT="${PROTECT_PORT:-18789}"
-WORKSPACE="/home/purpose/.openclaw"
-SOULS="/etc/agenticlaw/souls"
-
-# ── Root: start sshd, set up SSH keys ──
-if [ -x /usr/sbin/sshd ]; then
-    /usr/sbin/sshd 2>/dev/null || true
-fi
-
+# ── Set up SSH authorized_keys from ro mount ──
 if [ -f /home/purpose/.ssh/authorized_keys ] && [ ! -w /home/purpose/.ssh ]; then
     mkdir -p /home/purpose/.ssh-live
     cp /home/purpose/.ssh/authorized_keys /home/purpose/.ssh-live/authorized_keys
@@ -23,72 +14,32 @@ if [ -f /home/purpose/.ssh/authorized_keys ] && [ ! -w /home/purpose/.ssh ]; the
     chmod 600 /home/purpose/.ssh-live/authorized_keys
 fi
 
-# ── Drop to purpose user ──
-exec gosu purpose /bin/bash -c '
-set -eu
+# ── Write agenticlaw system service (runs as purpose) ──
+cat > /etc/systemd/system/agenticlaw.service << UNIT
+[Unit]
+Description=Agenticlaw Consciousness Stack
+After=network.target
 
-PG_PORT="${PROTECT_PORT:-18789}"
-WORKSPACE="${HOME}/.openclaw"
-SOULS="/etc/agenticlaw/souls"
+[Service]
+Type=simple
+User=purpose
+Group=purpose
+ExecStart=/usr/local/bin/agenticlaw --workspace /home/purpose/.openclaw --souls /etc/agenticlaw/souls
+Restart=on-failure
+RestartSec=5
+Environment=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+Environment=RUST_LOG=${RUST_LOG:-info}
+Environment=RUSTCLAW_MODEL=${RUSTCLAW_MODEL:-claude-opus-4-6}
+Environment=HOME=/home/purpose
+WorkingDirectory=/home/purpose
 
-echo "=== Purpose Consciousness Container ===" >&2
-echo "Role: OPERATOR" >&2
-echo "User: $(whoami)" >&2
-echo "Home: ${HOME}" >&2
-echo "Workspace: ${WORKSPACE}" >&2
+[Install]
+WantedBy=multi-user.target
+UNIT
 
-mkdir -p "${WORKSPACE}"
-if [ ! -e "${WORKSPACE}/L0" ]; then
-    ln -sf "${WORKSPACE}/workspace" "${WORKSPACE}/L0"
-    echo "Linked L0 → workspace" >&2
-fi
+# Enable agenticlaw and ssh
+systemctl enable agenticlaw.service
+systemctl enable ssh.service
 
-agenticlaw-consciousness \
-    --workspace "${WORKSPACE}" \
-    --souls "${SOULS}" &
-CONSCIOUSNESS_PID=$!
-
-# Wait for L0 gateway (ego distillation takes ~60s on first wake)
-i=0
-while [ $i -lt 300 ]; do
-    if wget -qO /dev/null "http://127.0.0.1:18790/health" 2>/dev/null; then
-        echo "Consciousness L0 ready on :18790" >&2
-        break
-    fi
-    sleep 1
-    i=$((i + 1))
-done
-
-if [ $i -ge 300 ]; then
-    echo "ERROR: Consciousness failed to start within 5min" >&2
-    exit 1
-fi
-
-protectgateway \
-    --config /etc/agenticlaw/pg-config.yaml \
-    --ws-proxy \
-    --ws-listen "0.0.0.0:${PG_PORT}" \
-    --ws-upstream "ws://127.0.0.1:18790" &
-PG_PID=$!
-
-i=0
-while [ $i -lt 60 ]; do
-    if wget -qO /dev/null "http://127.0.0.1:18788/health" 2>/dev/null; then
-        echo "ProtectGateway ready on :${PG_PORT}" >&2
-        break
-    fi
-    sleep 0.5
-    i=$((i + 1))
-done
-
-echo "=== Purpose Consciousness Ready ===" >&2
-
-trap "kill $PG_PID $CONSCIOUSNESS_PID 2>/dev/null; exit 0" EXIT TERM INT
-
-while kill -0 $PG_PID 2>/dev/null && kill -0 $CONSCIOUSNESS_PID 2>/dev/null; do
-    sleep 5
-done
-
-echo "Process exited, shutting down" >&2
-kill $PG_PID $CONSCIOUSNESS_PID 2>/dev/null || true
-'
+# ── Boot systemd as PID 1 ──
+exec /lib/systemd/systemd
