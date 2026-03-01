@@ -275,17 +275,32 @@ async fn main() -> anyhow::Result<()> {
             println!("agenticlaw v{}", env!("CARGO_PKG_VERSION"));
         }
 
-        // No subcommand — default behavior
+        // No subcommand — connect to running service, or start fresh
         None => {
-            // If --session provided → TUI chat
-            if cli.session.is_some() {
-                let workspace = Some(resolve_home(cli.workspace.as_ref(), &oc));
-                let model = oc.default_model();
-                agenticlaw_gateway::tui::run_tui(workspace, cli.session, model, false).await?;
+            let session_name = cli
+                .session
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+            // Try connecting to running service first
+            if let Ok(health) = agenticlaw_gateway::service::check_health(cli.port).await {
+                let version = health["version"].as_str().unwrap_or("?");
+                eprintln!(
+                    "Connecting to agenticlaw gateway v{} on port {}...",
+                    version, cli.port
+                );
+
+                let token = std::env::var("RUSTCLAW_GATEWAY_TOKEN")
+                    .or_else(|_| std::env::var("OPENCLAW_GATEWAY_TOKEN"))
+                    .ok();
+
+                agenticlaw_gateway::tui_client::run_tui_client(cli.port, session_name, token)
+                    .await?;
             } else if cli.no_consciousness {
                 init_tracing();
                 start_gateway_only(&cli, &oc).await?;
             } else {
+                // Nothing running — start consciousness
                 init_tracing();
                 start_conscious(&cli, &oc).await?;
             }
