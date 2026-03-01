@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agenticlaw"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-consciousness",
  "agenticlaw-core",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-agent"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-core",
  "agenticlaw-llm",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-consciousness"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-agent",
  "agenticlaw-core",
@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-core"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-gateway"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-agent",
  "agenticlaw-core",
@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-llm"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-core",
  "async-stream",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "agenticlaw-tools"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "agenticlaw-core",
  "agenticlaw-llm",
