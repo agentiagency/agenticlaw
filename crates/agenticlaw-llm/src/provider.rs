@@ -3,6 +3,7 @@
 use crate::types::{LlmRequest, StreamDelta};
 use futures::Stream;
 use std::pin::Pin;
+use tokio_util::sync::CancellationToken;
 
 /// Result type for LLM operations
 pub type LlmResult<T> = Result<T, LlmError>;
@@ -28,6 +29,9 @@ pub enum LlmError {
     #[error("stream error: {0}")]
     StreamError(String),
 
+    #[error("cancelled")]
+    Cancelled,
+
     #[error("network error: {0}")]
     NetworkError(#[from] reqwest::Error),
 }
@@ -47,5 +51,11 @@ pub trait LlmProvider: Send + Sync {
             .any(|m| *m == model || model.starts_with(m))
     }
 
-    async fn complete_stream(&self, request: LlmRequest) -> LlmResult<LlmStream>;
+    /// Stream a completion response. If `cancel` is provided and triggered,
+    /// the underlying HTTP connection is dropped and the stream yields `LlmError::Cancelled`.
+    async fn complete_stream(
+        &self,
+        request: LlmRequest,
+        cancel: Option<CancellationToken>,
+    ) -> LlmResult<LlmStream>;
 }

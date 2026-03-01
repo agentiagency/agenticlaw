@@ -444,7 +444,7 @@ impl AgentRuntime {
 
         let stream = self
             .provider
-            .complete_stream(request)
+            .complete_stream(request, None)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -684,7 +684,7 @@ impl SpawnableRuntime for AgentRuntime {
                     ..Default::default()
                 };
 
-                let stream = match provider.complete_stream(request).await {
+                let stream = match provider.complete_stream(request, None).await {
                     Ok(s) => s,
                     Err(e) => {
                         let _ = tx.send(AgentEvent::Error(e.to_string())).await;

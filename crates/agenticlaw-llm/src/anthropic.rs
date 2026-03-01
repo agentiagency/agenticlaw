@@ -5,6 +5,7 @@ use crate::types::{LlmRequest, StreamDelta, Usage};
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -45,7 +46,11 @@ impl LlmProvider for AnthropicProvider {
         ]
     }
 
-    async fn complete_stream(&self, request: LlmRequest) -> LlmResult<LlmStream> {
+    async fn complete_stream(
+        &self,
+        request: LlmRequest,
+        cancel: Option<CancellationToken>,
+    ) -> LlmResult<LlmStream> {
         // Heal any orphaned tool_use blocks before sending
         let healed_messages = crate::types::validate_and_heal_messages(&request.messages);
 
@@ -117,13 +122,14 @@ impl LlmProvider for AnthropicProvider {
             }
         }
 
-        let stream = parse_sse_stream(response.bytes_stream());
+        let stream = parse_sse_stream(response.bytes_stream(), cancel);
         Ok(Box::pin(stream))
     }
 }
 
 fn parse_sse_stream(
     bytes_stream: impl futures::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+    cancel: Option<CancellationToken>,
 ) -> impl futures::Stream<Item = LlmResult<StreamDelta>> + Send {
     async_stream::stream! {
         let mut buffer = String::new();
@@ -131,7 +137,29 @@ fn parse_sse_stream(
 
         tokio::pin!(bytes_stream);
 
-        while let Some(chunk_result) = bytes_stream.next().await {
+        loop {
+            // Race next chunk against cancellation
+            let chunk_result = if let Some(ref token) = cancel {
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        yield Err(LlmError::Cancelled);
+                        break;
+                    }
+                    next = bytes_stream.next() => {
+                        match next {
+                            Some(r) => r,
+                            None => break,
+                        }
+                    }
+                }
+            } else {
+                match bytes_stream.next().await {
+                    Some(r) => r,
+                    None => break,
+                }
+            };
+
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(e) => {
@@ -165,7 +193,7 @@ fn parse_sse_stream(
                             match data.content_block {
                                 ContentBlockType::ToolUse { id, name } => {
                                     current_tool_id = Some(id.clone());
-                                                    yield Ok(StreamDelta::ToolCallStart { id, name });
+                                    yield Ok(StreamDelta::ToolCallStart { id, name });
                                 }
                                 ContentBlockType::Text { .. } => {}
                             }
@@ -194,21 +222,26 @@ fn parse_sse_stream(
                     "content_block_stop" => {
                         if let Some(id) = current_tool_id.take() {
                             yield Ok(StreamDelta::ToolCallEnd { id });
-
                         }
                     }
                     "message_delta" => {
                         if let Ok(data) = serde_json::from_str::<MessageDelta>(&event_data) {
-                            if let Some(stop_reason) = data.delta.stop_reason {
-                                debug!("Message complete: stop_reason={}", stop_reason);
+                            let stop_reason = data.delta.stop_reason.clone();
+                            let usage = data.usage.clone();
+                            if let Some(ref sr) = stop_reason {
+                                debug!(stop_reason = %sr, "Message complete");
                             }
+                            if let Some(ref u) = usage {
+                                info!(input_tokens = u.input_tokens, output_tokens = u.output_tokens, "Token usage");
+                            }
+                            yield Ok(StreamDelta::Done {
+                                stop_reason,
+                                usage,
+                            });
                         }
                     }
                     "message_stop" => {
-                        yield Ok(StreamDelta::Done {
-                            stop_reason: Some("end_turn".to_string()),
-                            usage: None,
-                        });
+                        // message_stop is the final event; Done already emitted from message_delta
                     }
                     "error" => {
                         if let Ok(data) = serde_json::from_str::<ErrorEvent>(&event_data) {

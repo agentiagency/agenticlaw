@@ -12,4 +12,5 @@ pub mod glob;
 pub mod grep;
 pub mod read;
 pub mod spawn;
+pub mod subagent;
 pub mod write;

@@ -277,7 +277,7 @@ async fn anthropic_provider_simple_text_response() {
 
     use futures::StreamExt;
     let stream = provider
-        .complete_stream(request)
+        .complete_stream(request, None)
         .await
         .expect("API call failed");
     tokio::pin!(stream);
@@ -337,7 +337,7 @@ async fn anthropic_provider_with_tools() {
 
     use futures::StreamExt;
     let stream = provider
-        .complete_stream(request)
+        .complete_stream(request, None)
         .await
         .expect("API call failed");
     tokio::pin!(stream);
@@ -392,7 +392,7 @@ async fn anthropic_provider_bad_key_fails() {
         ..Default::default()
     };
 
-    let result = provider.complete_stream(request).await;
+    let result = provider.complete_stream(request, None).await;
     assert!(result.is_err(), "Expected error with bad API key");
 }
 
